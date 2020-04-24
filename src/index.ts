@@ -1,12 +1,9 @@
-import {createConnect} from "./createConnect";
-import {SanityClient} from "@sanity/client";
+import {SanityClient} from '@sanity/client'
+import {BifurClient, fromUrl} from './createClient'
 
-export const fromUrl = createConnect<WebSocket>(
-  (url: string, protocols?: string | string[]) =>
-    new window.WebSocket(url, protocols),
-)
+export {fromUrl}
 
-export function fromClient(client: SanityClient) {
+export function fromSanityClient(client: SanityClient): BifurClient {
   const {dataset} = client.config()
-  return fromUrl(client.getUrl(`/socket/${dataset}`).replace(/^http/, "ws"))
+  return fromUrl(client.getUrl(`/socket/${dataset}`).replace(/^http/, 'ws'))
 }

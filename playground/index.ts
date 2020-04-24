@@ -1,8 +1,13 @@
 import {tap} from 'rxjs/operators'
-import {createClient} from '../src/messages'
+import {fromUrl} from '../src'
 
-const connection = createClient('wss://ppsg7ml5.api.sanity.io/v1/socket/test')
+const connection = fromUrl('wss://ppsg7ml5.api.sanity.io/v1/socket/test')
 
 connection.heartbeat$.subscribe()
-connection.stream('presence').pipe(tap(console.log)).subscribe()
-connection.request('presence_rollcall').pipe(tap(console.log)).subscribe()
+const sub = connection.stream('presence').pipe(tap(console.log)).subscribe()
+// connection.request('presence_rollcall').pipe(tap(console.log)).subscribe()
+
+setTimeout(() => {
+  sub.unsubscribe()
+}, 1000)
+// connection.stream('presence').pipe(tap(console.log)).subscribe()

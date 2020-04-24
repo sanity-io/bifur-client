@@ -7,6 +7,7 @@ import {
   shareReplay,
   switchMap,
   take,
+  finalize,
 } from 'rxjs/operators'
 
 import {
@@ -20,10 +21,11 @@ import {
   race,
   throwError,
   timer,
+  MonoTypeOperatorFunction,
 } from 'rxjs'
 
 import {customAlphabet} from 'nanoid'
-import {fromUrl} from './index'
+import {createConnect} from './createConnect'
 
 // at 1000 IDs per second ~4 million years needed in order to have a 1% probability of at least one collision.
 // => https://zelark.github.io/nano-id-cc/
@@ -47,7 +49,7 @@ type JSONRpcMessage<T> = {
   result: T
 }
 
-interface BifurClient {
+export interface BifurClient {
   heartbeat$: Observable<Date>
   request: <T>(method: RequestMethod, params?: RequestParams) => Observable<T>
   stream: <T>(method: StreamMethod, params?: RequestParams) => Observable<T>
@@ -83,8 +85,16 @@ function addApiVersion(params: RequestParams, v: string) {
   return {...params, apiVersion: v}
 }
 
-export const createClient = (url: string): BifurClient => {
-  const connection$ = fromUrl(url).pipe(
+const connect = createConnect<WebSocket>(
+  (url: string, protocols?: string | string[]) =>
+    new window.WebSocket(url, protocols),
+)
+
+const finalizeWith = <T>(finalizer$): MonoTypeOperatorFunction<T> => input$ =>
+  input$.pipe(finalize(() => finalizer$.subscribe()))
+
+export const fromUrl = (url: string): BifurClient => {
+  const connection$ = connect(url).pipe(
     timeoutOneWith(
       CONNECT_TIMEOUT_MS,
       throwError(
@@ -119,7 +129,7 @@ export const createClient = (url: string): BifurClient => {
     share(),
   )
 
-  function call<T>(method: string, params: RequestParams): Observable<T> {
+  function call<T>(method: string, params: RequestParams = {}): Observable<T> {
     const requestId = getNextRequestId()
     return connection$.pipe(
       take(1),
@@ -141,11 +151,11 @@ export const createClient = (url: string): BifurClient => {
   }
 
   // Will call the rpc method and return the first reply
-  function request<T>(method: RequestMethod, params: RequestParams = {}) {
+  function request<T>(method: RequestMethod, params?: RequestParams) {
     return call<T>(method, params).pipe(take(1))
   }
 
-  function stream<T>(method: StreamMethod, params: RequestParams = {}) {
+  function stream<T>(method: StreamMethod, params?: RequestParams) {
     return call<string>(`${method}_subscribe`, params).pipe(
       take(1),
       mergeMap(subscriptionId =>
@@ -156,6 +166,9 @@ export const createClient = (url: string): BifurClient => {
               message.params.subscription === subscriptionId,
           ),
           map(message => message.params.result),
+          finalizeWith(
+            call<string>(`${method}_unsubscribe`, {subscriptionId}),
+          ),
         ),
       ),
     )
