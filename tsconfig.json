@@ -1,0 +1,10 @@
+{
+  "include": ["./src/**.ts"],
+  "exclude": ["**/node_modules/*", "**__test__/*"],
+  "compilerOptions": {
+    "lib": ["es2020", "dom"],
+    "declaration": true,
+    "esModuleInterop": true,
+    "moduleResolution": "node"
+  }
+}
