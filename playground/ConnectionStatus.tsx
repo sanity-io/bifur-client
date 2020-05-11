@@ -81,7 +81,7 @@ function RelativeTime({
 export function ConnectionStatus() {
   const connectionState = useObservable<ConnectionStatusState>(
     merge(
-      client.heartbeat$,
+      client.heartbeats,
       onOffline$.pipe(
         mergeMapTo(
           throwError(new Error('The network connection has been lost.')),
