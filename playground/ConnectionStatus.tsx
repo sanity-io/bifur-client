@@ -1,15 +1,7 @@
 import {useObservable} from './utils/useObservable'
 import {client} from './client'
 import React from 'react'
-import {
-  concatMap,
-  map,
-  mapTo,
-  mergeMapTo,
-  share,
-  take,
-  takeUntil,
-} from 'rxjs/operators'
+import {map, mergeMapTo, share, take, takeUntil} from 'rxjs/operators'
 import {observableCallback} from 'observable-callback'
 import {
   concat,
@@ -110,7 +102,9 @@ export function ConnectionStatus() {
         }
 
         const triggerRetry$ = NEVER.pipe(
-          takeUntil(isOffline ? onOnline$ : merge(expiry$, onOnline$, onRetry$)),
+          takeUntil(
+            isOffline ? onOnline$ : merge(expiry$, onOnline$, onRetry$),
+          ),
         )
 
         return concat(
@@ -163,6 +157,7 @@ function ConnectedStatus({status}: {status: ConnectedState}) {
     </>
   )
 }
+
 function ConnectionError({errorStatus}: {errorStatus: ErrorState}) {
   if (errorStatus.offline) {
     return navigator.onLine ? (

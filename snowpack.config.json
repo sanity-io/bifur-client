@@ -1,0 +1,15 @@
+{
+  "scripts": {
+    "mount:public": "mount . --to .",
+    "mount:web_modules": "mount web_modules",
+    "mount:src": "mount . --to _dist_",
+    "plugin:ts,tsx": "@snowpack/plugin-babel",
+    "build:ts,tsx,js,jsx": "babel --filename $FILE"
+  },
+  "devOptions": {
+    "port": 1234
+  },
+  "installOptions": {
+    "installTypes": true
+  }
+}
