@@ -1,22 +1,21 @@
-import {createConnect, WebSocket, WebSocketError} from "../createConnect"
-import {catchError, take, takeUntil, tap, toArray} from "rxjs/operators"
-import {of, timer} from "rxjs"
+import {createConnect, WebSocket, WebSocketError} from '../createConnect'
+import {catchError, take, takeUntil, tap, toArray} from 'rxjs/operators'
+import {of, timer} from 'rxjs'
 
 const createMockWS = (): WebSocket => ({
   onclose: null,
   onerror: null,
   onmessage: null,
   onopen: null,
-  close(code?: number, reason?: string) {
-  },
+  close(code?: number, reason?: string) {},
 })
 
-describe("createConnect", () => {
-  it("emits the connection upon successfully open", async () => {
+describe('createConnect', () => {
+  it('emits the connection upon successfully open', async () => {
     const mockWs = createMockWS()
     const connect = createConnect(() => mockWs)
 
-    const conn$ = connect("https://mock")
+    const conn$ = connect('https://mock')
     setTimeout(() => {
       mockWs.onopen!({})
     }, 100)
@@ -31,14 +30,14 @@ describe("createConnect", () => {
       .toPromise()
   })
 
-  it("closes the connection gracefully upon unsubscribe", async () => {
+  it('closes the connection gracefully upon unsubscribe', async () => {
     const mockWs = createMockWS()
 
     const connect = createConnect(() => mockWs)
 
-    const conn$ = connect("https://mock")
+    const conn$ = connect('https://mock')
 
-    const closed = new Promise<{ code: number; reason: string }>(
+    const closed = new Promise<{code: number; reason: string}>(
       resolve =>
         (mockWs.close = (code: number, reason: string) =>
           resolve({code, reason})),
@@ -55,11 +54,11 @@ describe("createConnect", () => {
     expect(connection).toBeUndefined()
   })
 
-  it("throws a connection error if the connection emits an error", async () => {
+  it('throws a connection error if the connection emits an error', async () => {
     const mockWs = createMockWS()
     const connect = createConnect(() => mockWs)
 
-    const conn$ = connect("https://mock")
+    const conn$ = connect('https://mock')
 
     setTimeout(() => {
       mockWs.onerror!({})
@@ -74,18 +73,18 @@ describe("createConnect", () => {
 
     expect(res.length).toBe(1)
     expect(res[0]).toBeInstanceOf(Error)
-    expect((<WebSocketError>res[0]).code).toEqual("CONNECTION_ERROR")
+    expect((<WebSocketError>res[0]).code).toEqual('CONNECTION_ERROR')
   })
 
-  it("throws an error on unexpected close", async () => {
+  it('throws an error on unexpected close', async () => {
     const mockWs = createMockWS()
     const connect = createConnect(() => mockWs)
 
-    const conn$ = connect("https://mock")
+    const conn$ = connect('https://mock')
 
     setTimeout(() => {
       mockWs.onclose!({
-        reason: "Unexpected close",
+        reason: 'Unexpected close',
         code: 1006,
         wasClean: false,
       } as CloseEvent)
@@ -100,6 +99,6 @@ describe("createConnect", () => {
 
     expect(res.length).toBe(1)
     expect(res[0]).toBeInstanceOf(Error)
-    expect((<WebSocketError>res[0]).code).toEqual("CONNECTION_CLOSED")
+    expect((<WebSocketError>res[0]).code).toEqual('CONNECTION_CLOSED')
   })
 })

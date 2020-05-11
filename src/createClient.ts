@@ -1,13 +1,12 @@
 import {
   filter,
+  finalize,
   map,
   mergeMap,
   mergeMapTo,
   share,
-  shareReplay,
   switchMap,
   take,
-  finalize,
 } from 'rxjs/operators'
 
 import {
@@ -15,17 +14,21 @@ import {
   EMPTY,
   fromEvent,
   merge,
+  MonoTypeOperatorFunction,
   Observable,
   of,
   partition,
-  race,
-  throwError,
-  timer,
-  MonoTypeOperatorFunction,
 } from 'rxjs'
 
 import {customAlphabet} from 'nanoid'
-import {createConnect} from './createConnect'
+import {
+  BifurClient,
+  JSONRpcMessage,
+  RequestMethod,
+  RequestParams,
+  SubscribeMethods,
+} from './types'
+import {SUBSCRIBE_METHODS} from './methods'
 
 // at 1000 IDs per second ~4 million years needed in order to have a 1% probability of at least one collision.
 // => https://zelark.github.io/nano-id-cc/
@@ -35,25 +38,6 @@ const getNextRequestId = customAlphabet(
 )
 
 const HEARTBEAT = '♥'
-
-type RequestMethod = 'query' | 'mutate' | 'presence_rollcall'
-type StreamMethod = 'presence' | 'listen'
-
-type RequestParams = Record<string, any>
-
-type JSONRpcMessage<T> = {
-  jsonrpc: string
-  id: string
-  method: string
-  params: RequestParams
-  result: T
-}
-
-export interface BifurClient {
-  heartbeat$: Observable<Date>
-  request: <T>(method: RequestMethod, params?: RequestParams) => Observable<T>
-  stream: <T>(method: StreamMethod, params?: RequestParams) => Observable<T>
-}
 
 function formatRequest(method: string, params: RequestParams, id: string) {
   return JSON.stringify({
@@ -72,40 +56,18 @@ function tryParse<T>(input: string): [Error] | [null, T] {
   }
 }
 
-const CONNECT_TIMEOUT_MS = 5000
-
-// Operator that will time out using <withObservable> if <due> time passes before receiving the first value
-const timeoutOneWith = <T>(due: number, withObservable: Observable<any>) => {
-  return (input$: Observable<T>): Observable<T> => {
-    return race(input$, timer(due).pipe(mergeMapTo(withObservable)))
-  }
-}
-
 function addApiVersion(params: RequestParams, v: string) {
   return {...params, apiVersion: v}
 }
 
-const connect = createConnect<WebSocket>(
-  (url: string, protocols?: string | string[]) =>
-    new window.WebSocket(url, protocols),
-)
-
-const finalizeWith = <T>(finalizer$): MonoTypeOperatorFunction<T> => input$ =>
+const finalizeWith = <T>(
+  finalizer$: Observable<any>,
+): MonoTypeOperatorFunction<T> => input$ =>
   input$.pipe(finalize(() => finalizer$.subscribe()))
 
-export const fromUrl = (url: string): BifurClient => {
-  const connection$ = connect(url).pipe(
-    timeoutOneWith(
-      CONNECT_TIMEOUT_MS,
-      throwError(
-        new Error(
-          `Timeout after ${CONNECT_TIMEOUT_MS} while establishing WebSockets connection`,
-        ),
-      ),
-    ),
-    shareReplay({refCount: true}),
-  )
-
+export const createClient = (
+  connection$: Observable<WebSocket>,
+): BifurClient => {
   const [heartbeats$, responses$] = partition(
     connection$.pipe(
       switchMap(connection => fromEvent<MessageEvent>(connection, 'message')),
@@ -151,11 +113,14 @@ export const fromUrl = (url: string): BifurClient => {
   }
 
   // Will call the rpc method and return the first reply
-  function request<T>(method: RequestMethod, params?: RequestParams) {
+  function requestMethod<T>(method: RequestMethod, params?: RequestParams) {
     return call<T>(method, params).pipe(take(1))
   }
 
-  function stream<T>(method: StreamMethod, params?: RequestParams) {
+  function requestSubscribe<T>(
+    method: SubscribeMethods,
+    params?: RequestParams,
+  ) {
     return call<string>(`${method}_subscribe`, params).pipe(
       take(1),
       mergeMap(subscriptionId =>
@@ -174,11 +139,23 @@ export const fromUrl = (url: string): BifurClient => {
     )
   }
 
-  const heartbeat$ = merge(heartbeats$, responses$).pipe(map(() => new Date()))
-
   return {
-    heartbeat$,
-    request,
-    stream,
+    // heartbeat$ is a stream of date objects representing when the "last message was received"
+    // it will keep the connection open until it is unsubscribed and can therefore be used to keep connection alive
+    // between requests
+    heartbeats: merge(heartbeats$, responses$).pipe(map(() => new Date())),
+    request: (
+      method: SubscribeMethods | RequestMethod,
+      params?: RequestParams,
+    ) =>
+      isSubscribeMethod(method)
+        ? requestSubscribe(method, params)
+        : requestMethod(method, params),
   }
+}
+
+function isSubscribeMethod(
+  method: SubscribeMethods | RequestMethod,
+): method is SubscribeMethods {
+  return SUBSCRIBE_METHODS.includes(method)
 }

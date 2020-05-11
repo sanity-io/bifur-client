@@ -1,4 +1,4 @@
-import {Observable} from "rxjs"
+import {Observable} from 'rxjs'
 
 export interface WebSocket {
   onclose: ((this: this, ev: CloseEvent) => any) | null
@@ -8,7 +8,7 @@ export interface WebSocket {
   close(code?: number, reason?: string): void
 }
 
-type ErrorCode = "CONNECTION_ERROR" | "CONNECTION_CLOSED"
+type ErrorCode = 'CONNECTION_ERROR' | 'CONNECTION_CLOSED'
 
 export class WebSocketError extends Error {
   code: ErrorCode
@@ -19,11 +19,11 @@ export class WebSocketError extends Error {
 }
 
 export function createConnect<T extends WebSocket>(
-  createInstance: (url: string, protocols?: string | string[]) => T,
+  getWebsocketInstance: (url: string, protocols?: string | string[]) => T,
 ) {
   return (url: string) => {
     return new Observable<T>(subscriber => {
-      const ws = createInstance(url)
+      const ws = getWebsocketInstance(url)
 
       let didUnsubscribe = false
 
@@ -33,7 +33,7 @@ export function createConnect<T extends WebSocket>(
 
       const onError = () => {
         subscriber.error(
-          new WebSocketError("WebSocket connection error", "CONNECTION_ERROR"),
+          new WebSocketError('WebSocket connection error', 'CONNECTION_ERROR'),
         )
       }
 
@@ -41,8 +41,8 @@ export function createConnect<T extends WebSocket>(
         if (!didUnsubscribe) {
           subscriber.error(
             new WebSocketError(
-              "WebSocket connection error",
-              "CONNECTION_CLOSED",
+              'WebSocket connection error',
+              'CONNECTION_CLOSED',
             ),
           )
         } else {
@@ -56,7 +56,7 @@ export function createConnect<T extends WebSocket>(
 
       return () => {
         didUnsubscribe = true
-        ws.close(1000, "WebSockets connection closed by client")
+        ws.close(1000, 'WebSockets connection closed by client')
       }
     })
   }
