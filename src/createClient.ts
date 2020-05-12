@@ -3,7 +3,6 @@ import {
   finalize,
   map,
   mergeMap,
-  mergeMapTo,
   share,
   switchMap,
   take,
@@ -112,11 +111,13 @@ export const createClient = (
     )
   }
 
-  // Will call the rpc method and return the first reply
+  // Will call the rpc method and return an observable that emits the first reply and then ends
   function requestMethod<T>(method: RequestMethod, params?: RequestParams) {
     return call<T>(method, params).pipe(take(1))
   }
 
+  // Will call the rpc method with the '_subscribe' suffix and return an observable of all received messages and
+  // keeps the subscription open forever/until unsubscribe
   function requestSubscribe<T>(
     method: SubscribeMethods,
     params?: RequestParams,
