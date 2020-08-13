@@ -1,4 +1,5 @@
 import {
+  catchError,
   filter,
   finalize,
   map,
@@ -62,7 +63,9 @@ function addApiVersion(params: RequestParams, v: string) {
 const finalizeWith = <T>(
   finalizer$: Observable<any>,
 ): MonoTypeOperatorFunction<T> => input$ =>
-  input$.pipe(finalize(() => finalizer$.subscribe()))
+  input$.pipe(
+    finalize(() => finalizer$.pipe(catchError(() => EMPTY)).subscribe()),
+  )
 
 export const createClient = (
   connection$: Observable<WebSocket>,
