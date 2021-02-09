@@ -1,6 +1,13 @@
 import {Observable} from 'rxjs'
 
-export type RequestMethod = 'query' | 'mutate' | 'presence_rollcall' | 'presence_announce' | 'presence_disconnect'
+export type RequestMethod =
+  | 'doc'
+  | 'query'
+  | 'mutate'
+  | 'presence_rollcall'
+  | 'presence_announce'
+  | 'presence_disconnect'
+
 export type SubscribeMethods = 'presence' | 'listen'
 
 export type RequestParams = Record<string, any>
