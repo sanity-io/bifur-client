@@ -27,3 +27,8 @@ export interface BifurClient {
     params?: RequestParams,
   ) => Observable<T>
 }
+
+export interface SanityClientLike {
+  config(): {dataset: string}
+  getUrl(path: string): string
+}
