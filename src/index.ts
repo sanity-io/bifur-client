@@ -16,6 +16,7 @@ interface Options {
 
 const id = <T>(arg: T): T => arg
 
+export {ERROR_CODES} from './errorCodes'
 export {BifurClient}
 
 export function fromUrl(url: string, options: Options = {}): BifurClient {
