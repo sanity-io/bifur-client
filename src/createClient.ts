@@ -41,8 +41,8 @@ function formatRequest(method: string, params: RequestParams, id: string) {
 function tryParse<T>(input: string): [Error] | [null, T] {
   try {
     return [null, JSON.parse(input)]
-  } catch (error) {
-    return [error]
+  } catch (error: unknown) {
+    return error instanceof Error ? [error] : [new Error(`${error}`)]
   }
 }
 
