@@ -10,6 +10,8 @@ export type RequestMethod =
 
 export type SubscribeMethods = 'presence' | 'listen'
 
+export type AuthorizationMethods = 'authorization'
+
 export type RequestParams = Record<string, any>
 
 export type JSONRpcMessage<T> = {
@@ -23,7 +25,7 @@ export type JSONRpcMessage<T> = {
 export interface BifurClient {
   heartbeats: Observable<Date>
   request: <T>(
-    method: RequestMethod | SubscribeMethods,
+    method: RequestMethod | SubscribeMethods | AuthorizationMethods,
     params?: RequestParams,
   ) => Observable<T>
 }
