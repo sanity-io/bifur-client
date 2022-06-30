@@ -30,6 +30,6 @@ export interface BifurClient {
 }
 
 export interface SanityClientLike {
-  config(): {dataset: string}
+  config(): {dataset: string; token?: string}
   getUrl(path: string): string
 }

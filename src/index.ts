@@ -1,17 +1,13 @@
-import {BifurClient, SanityClientLike} from './types'
+import type {BifurClient, SanityClientLike} from './types'
 import {createClient} from './createClient'
 import {createConnect} from './createConnect'
 import {timeoutFirstWith} from './operators'
 import {shareReplay, takeUntil} from 'rxjs/operators'
 import {throwError, fromEvent} from 'rxjs'
 
-const connect = createConnect<WebSocket>(
-  (url: string, protocols?: string | string[]) =>
-    new window.WebSocket(url, protocols),
-)
-
 interface Options {
   timeout?: number
+  token?: string
 }
 
 const id = <T>(arg: T): T => arg
@@ -20,14 +16,21 @@ export {ERROR_CODES} from './errorCodes'
 export {BifurClient}
 
 export function fromUrl(url: string, options: Options = {}): BifurClient {
+  const {timeout, token} = options
+
+  const connect = createConnect<WebSocket>(
+    (url: string, protocols?: string | string[]) =>
+      new window.WebSocket(url, protocols),
+  )
+
   return createClient(
     connect(url).pipe(
-      options.timeout
+      timeout
         ? timeoutFirstWith(
-            options.timeout,
+            timeout,
             throwError(
               new Error(
-                `Timeout after ${options.timeout} while establishing WebSockets connection`,
+                `Timeout after ${timeout} while establishing WebSockets connection`,
               ),
             ),
           )
@@ -35,10 +38,13 @@ export function fromUrl(url: string, options: Options = {}): BifurClient {
       shareReplay({refCount: true}),
       takeUntil(fromEvent(window, 'beforeunload')), // ensure graceful disconnect
     ),
+    {token},
   )
 }
 
 export function fromSanityClient(client: SanityClientLike): BifurClient {
-  const {dataset} = client.config()
-  return fromUrl(client.getUrl(`/socket/${dataset}`).replace(/^http/, 'ws'))
+  const {dataset, token} = client.config()
+  return fromUrl(client.getUrl(`/socket/${dataset}`).replace(/^http/, 'ws'), {
+    token,
+  })
 }
