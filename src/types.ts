@@ -1,4 +1,4 @@
-import {Observable} from 'rxjs'
+import type {Observable} from 'rxjs'
 
 export type RequestMethod =
   | 'doc'
@@ -7,10 +7,9 @@ export type RequestMethod =
   | 'presence_rollcall'
   | 'presence_announce'
   | 'presence_disconnect'
+  | 'authorization'
 
 export type SubscribeMethods = 'presence' | 'listen'
-
-export type AuthorizationMethods = 'authorization'
 
 export type RequestParams = Record<string, any>
 
@@ -25,7 +24,7 @@ export type JSONRpcMessage<T> = {
 export interface BifurClient {
   heartbeats: Observable<Date>
   request: <T>(
-    method: RequestMethod | SubscribeMethods | AuthorizationMethods,
+    method: RequestMethod | SubscribeMethods,
     params?: RequestParams,
   ) => Observable<T>
 }
