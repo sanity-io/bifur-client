@@ -8,6 +8,7 @@
   "es2015": "dist/es2015/index.js",
   "scripts": {
     "test": "jest",
+    "type-check": "tsc --noEmit",
     "build": "npm run build:es2015 && npm run build:esm && npm run build:cjs",
     "build:es2015": "tsc --module es2015 --target es2015 --outDir dist/es2015",
     "build:esm": "tsc --module es2015 --target es5 --outDir dist/esm",
