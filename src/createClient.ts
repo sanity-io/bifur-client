@@ -94,7 +94,7 @@ export const createClient = (
             mapTo(ws),
           ),
         ),
-        shareReplay(1),
+        shareReplay({refCount: true, bufferSize: 1}),
       )
     : connection$
 
