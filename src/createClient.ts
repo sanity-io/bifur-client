@@ -2,8 +2,10 @@ import {
   filter,
   finalize,
   map,
+  mapTo,
   mergeMap,
   share,
+  shareReplay,
   switchMap,
   take,
 } from 'rxjs/operators'
@@ -50,10 +52,16 @@ function addApiVersion(params: RequestParams, v: string) {
   return {...params, apiVersion: v}
 }
 
+export interface BifurClientOptions {
+  token?: string
+  getNextRequestId?: () => string
+}
+
 export const createClient = (
   connection$: Observable<WebSocket>,
-  getNextRequestId = defaultGetNextRequestId,
+  options: BifurClientOptions = {},
 ): BifurClient => {
+  const {token, getNextRequestId = defaultGetNextRequestId} = options
   const [heartbeats$, responses$] = partition(
     connection$.pipe(
       switchMap(connection => fromEvent<MessageEvent>(connection, 'message')),
@@ -77,6 +85,19 @@ export const createClient = (
     share(),
   )
 
+  const authedConnection$ = token
+    ? connection$.pipe(
+        take(1),
+        mergeMap(ws =>
+          call(ws, 'authorization', {authorization: `Bearer ${token}`}).pipe(
+            take(1),
+            mapTo(ws),
+          ),
+        ),
+        shareReplay({refCount: true, bufferSize: 1}),
+      )
+    : connection$
+
   function call<T>(
     ws: WebSocket,
     method: string,
@@ -97,7 +118,7 @@ export const createClient = (
 
   // Will call the rpc method and return an observable that emits the first reply and then ends
   function requestMethod<T>(method: RequestMethod, params?: RequestParams) {
-    return connection$.pipe(
+    return authedConnection$.pipe(
       take(1),
       mergeMap(ws => call<T>(ws, method, params).pipe(take(1))),
     )
@@ -109,7 +130,7 @@ export const createClient = (
     method: SubscribeMethods,
     params?: RequestParams,
   ) {
-    return connection$.pipe(
+    return authedConnection$.pipe(
       take(1),
       mergeMap(ws =>
         call<string>(ws, `${method}_subscribe`, params).pipe(
