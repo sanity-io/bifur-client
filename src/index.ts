@@ -3,11 +3,11 @@ import {createClient} from './createClient'
 import {createConnect} from './createConnect'
 import {timeoutFirstWith} from './operators'
 import {shareReplay, takeUntil} from 'rxjs/operators'
-import {throwError, fromEvent} from 'rxjs'
+import {throwError, fromEvent, Observable, of} from 'rxjs'
 
 interface Options {
   timeout?: number
-  token?: string
+  token$?: Observable<string | null>
 }
 
 const id = <T>(arg: T): T => arg
@@ -16,7 +16,7 @@ export {ERROR_CODES} from './errorCodes'
 export {BifurClient}
 
 export function fromUrl(url: string, options: Options = {}): BifurClient {
-  const {timeout, token} = options
+  const {timeout, token$} = options
 
   const connect = createConnect<WebSocket>(
     (url: string, protocols?: string | string[]) =>
@@ -38,13 +38,14 @@ export function fromUrl(url: string, options: Options = {}): BifurClient {
       shareReplay({refCount: true}),
       takeUntil(fromEvent(window, 'beforeunload')), // ensure graceful disconnect
     ),
-    {token},
+    {token$},
   )
 }
 
 export function fromSanityClient(client: SanityClientLike): BifurClient {
   const {dataset, token} = client.config()
-  return fromUrl(client.getUrl(`/socket/${dataset}`).replace(/^http/, 'ws'), {
-    token,
-  })
+  return fromUrl(
+    client.getUrl(`/socket/${dataset}`).replace(/^http/, 'ws'),
+    token ? {token$: of(token)} : {},
+  )
 }

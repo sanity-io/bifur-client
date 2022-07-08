@@ -1,4 +1,5 @@
 import {
+  distinctUntilChanged,
   filter,
   finalize,
   map,
@@ -10,7 +11,16 @@ import {
   take,
 } from 'rxjs/operators'
 
-import {defer, EMPTY, fromEvent, merge, Observable, of, partition} from 'rxjs'
+import {
+  combineLatest,
+  defer,
+  EMPTY,
+  fromEvent,
+  merge,
+  Observable,
+  of,
+  partition,
+} from 'rxjs'
 
 import {customAlphabet} from 'nanoid'
 import {
@@ -53,7 +63,7 @@ function addApiVersion(params: RequestParams, v: string) {
 }
 
 export interface BifurClientOptions {
-  token?: string
+  token$?: Observable<string | null>
   getNextRequestId?: () => string
 }
 
@@ -61,7 +71,7 @@ export const createClient = (
   connection$: Observable<WebSocket>,
   options: BifurClientOptions = {},
 ): BifurClient => {
-  const {token, getNextRequestId = defaultGetNextRequestId} = options
+  const {token$, getNextRequestId = defaultGetNextRequestId} = options
   const [heartbeats$, responses$] = partition(
     connection$.pipe(
       switchMap(connection => fromEvent<MessageEvent>(connection, 'message')),
@@ -85,14 +95,18 @@ export const createClient = (
     share(),
   )
 
-  const authedConnection$ = token
-    ? connection$.pipe(
-        take(1),
-        mergeMap(ws =>
-          call(ws, 'authorization', {authorization: `Bearer ${token}`}).pipe(
-            take(1),
-            mapTo(ws),
-          ),
+  const authedConnection$: Observable<WebSocket> = token$
+    ? combineLatest([token$, connection$]).pipe(
+        distinctUntilChanged(
+          ([oldToken, oldSocket], [newToken, newSocket]) =>
+            oldToken === newToken && oldSocket === newSocket,
+        ),
+        switchMap(([token, ws]) =>
+          token
+            ? call(ws, 'authorization', {
+                authorization: `Bearer ${token}`,
+              }).pipe(take(1), mapTo(ws))
+            : of(ws),
         ),
         shareReplay({refCount: true, bufferSize: 1}),
       )
@@ -168,7 +182,9 @@ export const createClient = (
     // heartbeat$ is a stream of date objects representing when the "last message was received"
     // it will keep the connection open until it is unsubscribed and can therefore be used to keep connection alive
     // between requests
-    heartbeats: merge(heartbeats$, responses$).pipe(map(() => new Date())),
+    heartbeats: merge(authedConnection$, heartbeats$, responses$).pipe(
+      map(() => new Date()),
+    ),
     request: (
       method: SubscribeMethods | RequestMethod,
       params?: RequestParams,
