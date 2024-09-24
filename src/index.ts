@@ -18,17 +18,20 @@ const id = <T>(arg: T): T => arg
 export type {SubscribeMethods, RequestMethod, RequestParams} from './types'
 export {ERROR_CODES} from './errorCodes'
 export {BifurClient, type BifurClientOptions}
-export { createClient, type SanityClientLike }
+export {createClient, type SanityClientLike}
 
 /**
  * Create a BifurClient from a WebSocket URL
- * 
+ *
  * @param url - The URL to connect to
  * @param options - Options for the client
  * @returns A Bifur client instance
  * @public
  */
-export function fromUrl(url: string, options: FromUrlOptions = {}): BifurClient {
+export function fromUrl(
+  url: string,
+  options: FromUrlOptions = {},
+): BifurClient {
   const {timeout, token$} = options
 
   const connect = createConnect<WebSocket>(
@@ -41,10 +44,11 @@ export function fromUrl(url: string, options: FromUrlOptions = {}): BifurClient 
       timeout
         ? timeoutFirstWith(
             timeout,
-            throwError(() =>
-              new Error(
-                `Timeout after ${timeout} while establishing WebSockets connection`,
-              ),
+            throwError(
+              () =>
+                new Error(
+                  `Timeout after ${timeout} while establishing WebSockets connection`,
+                ),
             ),
           )
         : id,
@@ -57,7 +61,7 @@ export function fromUrl(url: string, options: FromUrlOptions = {}): BifurClient 
 
 /**
  * Create a Bifur client from a `@sanity/client`-like instance
- * 
+ *
  * @param client - A `@sanity/client`-like instance
  * @returns A Bifur client instance
  * @public
