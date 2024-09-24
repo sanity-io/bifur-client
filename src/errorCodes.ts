@@ -1,3 +1,6 @@
+/**
+ * @public
+ */
 export enum ERROR_CODES {
   // Connection-level errors
   BAD_REQUEST = 4000,

@@ -61,11 +61,22 @@ function addApiVersion(params: RequestParams, v: string) {
   return {...params, apiVersion: v}
 }
 
+/**
+ * @public
+ */
 export interface BifurClientOptions {
   token$?: Observable<string | null>
   getNextRequestId?: () => string
 }
 
+/**
+ * Create a Bifur client
+ *
+ * @param connection$ - An observable of WebSocket connections
+ * @param options - Options for the client
+ * @returns A Bifur client
+ * @public
+ */
 export const createClient = (
   connection$: Observable<WebSocket>,
   options: BifurClientOptions = {},
@@ -139,10 +150,7 @@ export const createClient = (
 
   // Will call the rpc method with the '_subscribe' suffix and return an observable of all received messages and
   // keeps the subscription open forever/until unsubscribe
-  function requestSubscribe<T>(
-    method: SubscribeMethods,
-    params?: RequestParams,
-  ) {
+  function requestSubscribe(method: SubscribeMethods, params?: RequestParams) {
     return authedConnection$.pipe(
       take(1),
       mergeMap(ws =>
