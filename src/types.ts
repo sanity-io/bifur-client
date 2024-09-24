@@ -1,5 +1,8 @@
 import type {Observable} from 'rxjs'
 
+/**
+ * @public
+ */
 export type RequestMethod =
   | 'doc'
   | 'query'
@@ -11,6 +14,9 @@ export type RequestMethod =
   // a subscription method (emits authorization events, eg expiring tokens)
   | 'authorization'
 
+/**
+ * @public
+ */
 export type SubscribeMethods =
   | 'presence'
   | 'listen'
@@ -18,6 +24,9 @@ export type SubscribeMethods =
   // a subscription method (emits authorization events, eg expiring tokens)
   | 'authorization'
 
+/**
+ * @public
+ */
 export type RequestParams = Record<string, any>
 
 export type JSONRpcMessage<T> = {
@@ -28,12 +37,18 @@ export type JSONRpcMessage<T> = {
   result: T
 }
 
+/**
+ * @public
+ */
 export interface BifurClient {
   heartbeats: Observable<Date>
   listen: <T>(method: SubscribeMethods, params?: RequestParams) => Observable<T>
   request: <T>(method: RequestMethod, params?: RequestParams) => Observable<T>
 }
 
+/**
+ * @public
+ */
 export interface SanityClientLike {
   config(): {dataset: string; token?: string}
   getUrl(path: string): string

@@ -7,7 +7,7 @@ const createMockWS = (): WebSocket => ({
   onerror: null,
   onmessage: null,
   onopen: null,
-  close(code?: number, reason?: string) {},
+  close(_code?: number, _reason?: string) {},
 })
 
 describe('createConnect', () => {

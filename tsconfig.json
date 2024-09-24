@@ -1,12 +1,34 @@
 {
-  "include": ["./src/**.ts"],
-  "exclude": ["**/node_modules/*", "**__test__/*"],
+  "include": ["./src"],
   "compilerOptions": {
-    "strict": true,
-    "lib": ["es2020", "dom"],
-    "declaration": true,
-    "esModuleInterop": true,
+    "rootDir": ".",
+    "outDir": "./dist",
+
+    // Completeness
     "skipLibCheck": true,
-    "moduleResolution": "node"
+
+    // Interop constraints
+    "allowSyntheticDefaultImports": true,
+    "esModuleInterop": true,
+
+    // Language and environment
+    "target": "ES2020",
+
+    // Modules
+    "module": "ES2020",
+    "moduleResolution": "Node",
+
+    // Type checking
+    "alwaysStrict": true,
+    "noFallthroughCasesInSwitch": true,
+    "noImplicitAny": true,
+    "noImplicitReturns": true,
+    "noImplicitThis": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "strict": true,
+    "strictFunctionTypes": true,
+    "strictNullChecks": true,
+    "strictPropertyInitialization": true
   }
 }
