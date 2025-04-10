@@ -4,6 +4,10 @@
   "description": "",
   "type": "module",
   "sideEffects": false,
+  "repository": {
+    "type": "git",
+    "url": "git+ssh://git@github.com/sanity-io/bifur-client.git"
+  },
   "exports": {
     ".": {
       "source": "./src/index.ts",
