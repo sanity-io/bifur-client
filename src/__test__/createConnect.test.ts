@@ -1,9 +1,10 @@
 import {describe, expect, it} from 'vitest'
-import {createConnect, type WebSocket, WebSocketError} from '../createConnect'
+import {createConnect, WebSocketError} from '../createConnect'
 import {catchError, take, takeUntil, tap, toArray} from 'rxjs/operators'
 import {lastValueFrom, of, timer} from 'rxjs'
+import type {WebSocketLike} from '../types'
 
-const createMockWS = (): WebSocket => ({
+const createMockWS = (): WebSocketLike => ({
   onclose: null,
   onerror: null,
   onmessage: null,
@@ -11,25 +12,34 @@ const createMockWS = (): WebSocket => ({
   close(_code?: number, _reason?: string) {},
 })
 
+// TypeScript is weird and won't let us do type-narrowing on globalThis,
+// so we do a dance in order to check for properties that are not defined
+// in the `globalThis` typings, but might still be present at runtime.
 const ourGlobal: unknown = globalThis
-const CloserEvent =
+
+// Use CloseEvent from global if it exists, otherwise create a minimal mock
+// that replicates it with the properties we need.
+const CloseEvent =
   typeof ourGlobal === 'object' &&
   ourGlobal !== null &&
   'CloseEvent' in ourGlobal &&
   typeof (ourGlobal as any).CloseEvent !== 'undefined'
     ? (ourGlobal as any).CloseEvent
     : class CloserEvent extends Event {
-      reason: string
-      code: number
-      wasClean: boolean
+        reason: string
+        code: number
+        wasClean: boolean
 
-      constructor(type: string, init: {reason: string; code: number; wasClean: boolean}) {
-        super(type)
-        this.reason = init.reason
-        this.code = init.code
-        this.wasClean = init.wasClean
+        constructor(
+          type: string,
+          init: {reason: string; code: number; wasClean: boolean},
+        ) {
+          super(type)
+          this.reason = init.reason
+          this.code = init.code
+          this.wasClean = init.wasClean
+        }
       }
-    }
 
 describe('createConnect', () => {
   it('emits the connection upon successfully open', async () => {
@@ -111,7 +121,7 @@ describe('createConnect', () => {
 
     setTimeout(() => {
       mockWs.onclose!(
-        new CloserEvent('close', {
+        new CloseEvent('close', {
           reason: 'Unexpected close',
           code: 1006,
           wasClean: false,

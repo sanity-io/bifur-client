@@ -69,3 +69,23 @@ export interface EventTargetLike {
     options?: boolean,
   ): void
 }
+
+/**
+ * @internal
+ */
+export interface CloseEventLike {
+  reason: string
+  code: number
+  wasClean: boolean
+}
+
+/**
+ * @internal
+ */
+export interface WebSocketLike {
+  onclose: ((this: this, ev: any) => any) | null
+  onerror: ((this: this, ev: any) => any) | null
+  onmessage: ((this: this, ev: MessageEvent) => any) | null
+  onopen: ((this: this, ev: any) => any) | null
+  close(code?: number, reason?: string): void
+}

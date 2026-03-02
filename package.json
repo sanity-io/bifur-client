@@ -35,6 +35,7 @@
   "scripts": {
     "build": "pnpm run clean && pnpm run pkg:build && pnpm run pkg:check",
     "clean": "rimraf dist",
+    "format": "prettier --write .",
     "pkg:build": "pkg build --strict",
     "pkg:check": "pkg check --strict",
     "postpublish": "pnpm run clean",
