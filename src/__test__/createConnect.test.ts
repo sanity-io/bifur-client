@@ -1,3 +1,4 @@
+import {describe, expect, it} from 'vitest'
 import {createConnect, WebSocket, WebSocketError} from '../createConnect'
 import {catchError, take, takeUntil, tap, toArray} from 'rxjs/operators'
 import {lastValueFrom, of, timer} from 'rxjs'
@@ -69,7 +70,7 @@ describe('createConnect', () => {
 
     const res = await lastValueFrom(
       conn$.pipe(
-        catchError((err: WebSocketError) => of(err)),
+        catchError((err: unknown) => of(err)),
         toArray(),
       ),
     )
@@ -97,7 +98,7 @@ describe('createConnect', () => {
 
     const res = await lastValueFrom(
       conn$.pipe(
-        catchError((err: WebSocketError) => of(err)),
+        catchError((err: unknown) => of(err)),
         toArray(),
       ),
     )
