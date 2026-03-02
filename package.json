@@ -45,6 +45,7 @@
   },
   "devDependencies": {
     "@sanity/pkg-utils": "^6.11.2",
+    "@sanity/tsconfig": "^2.1.0",
     "@types/nanoid": "^2.1.0",
     "@types/ws": "^7.2.6",
     "npm-run-all": "^4.1.5",

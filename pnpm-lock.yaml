@@ -18,6 +18,9 @@ importers:
       '@sanity/pkg-utils':
         specifier: ^6.11.2
         version: 6.13.5(@types/babel__core@7.20.5)(@types/node@25.3.3)(typescript@5.9.3)
+      '@sanity/tsconfig':
+        specifier: ^2.1.0
+        version: 2.1.0
       '@types/nanoid':
         specifier: ^2.1.0
         version: 2.1.0
@@ -795,6 +798,9 @@ packages:
     peerDependenciesMeta:
       babel-plugin-react-compiler:
         optional: true
+
+  '@sanity/tsconfig@2.1.0':
+    resolution: {integrity: sha512-Cnz0EycMsfeILkxL/gYzzfPs511OzP3sjQxU4XkDtujdiFAc+bteMYXi4/SJ83m98cXLum63HbHDk+he6AbbIA==}
 
   '@standard-schema/spec@1.1.0':
     resolution: {integrity: sha512-l2aFy5jALhniG5HgqrD6jXLi/rUWrKvqN/qJx6yoJsgKhblVd+iqqU4RCXavm/jPityDo5TCvKMnpjKnOriy0w==}
@@ -2889,6 +2895,8 @@ snapshots:
       - '@types/node'
       - debug
       - supports-color
+
+  '@sanity/tsconfig@2.1.0': {}
 
   '@standard-schema/spec@1.1.0': {}
 

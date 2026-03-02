@@ -160,9 +160,9 @@ export const createClient = (
               filter(
                 message =>
                   message.method === `${method}_subscription` &&
-                  message.params.subscription === subscriptionId,
+                  message.params['subscription'] === subscriptionId,
               ),
-              map(message => message.params.result),
+              map(message => message.params['result']),
               finalize(() => {
                 if (
                   ws.readyState !== ws.CLOSED &&

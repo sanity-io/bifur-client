@@ -1,5 +1,5 @@
 import {describe, expect, it} from 'vitest'
-import {createConnect, WebSocket, WebSocketError} from '../createConnect'
+import {createConnect, type WebSocket, WebSocketError} from '../createConnect'
 import {catchError, take, takeUntil, tap, toArray} from 'rxjs/operators'
 import {lastValueFrom, of, timer} from 'rxjs'
 
