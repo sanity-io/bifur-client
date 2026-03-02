@@ -3,7 +3,6 @@ import {
   filter,
   finalize,
   map,
-  mapTo,
   mergeMap,
   share,
   shareReplay,
@@ -115,7 +114,7 @@ export const createClient = (
           token
             ? call(ws, 'authorization', {
                 authorization: `Bearer ${token}`,
-              }).pipe(take(1), mapTo(ws))
+              }).pipe(take(1), map(() => ws))
             : of(ws),
         ),
         shareReplay({refCount: true, bufferSize: 1}),
