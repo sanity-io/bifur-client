@@ -53,3 +53,19 @@ export interface SanityClientLike {
   config(): {dataset: string; token?: string}
   getUrl(path: string): string
 }
+
+/**
+ * @internal
+ */
+export interface EventTargetLike {
+  addEventListener(
+    type: string,
+    listener: (evt: Event) => void,
+    options?: boolean,
+  ): void
+  removeEventListener(
+    type: string,
+    listener: (evt: Event) => void,
+    options?: boolean,
+  ): void
+}

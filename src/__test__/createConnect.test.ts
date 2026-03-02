@@ -11,6 +11,26 @@ const createMockWS = (): WebSocket => ({
   close(_code?: number, _reason?: string) {},
 })
 
+const ourGlobal: unknown = globalThis
+const CloserEvent =
+  typeof ourGlobal === 'object' &&
+  ourGlobal !== null &&
+  'CloseEvent' in ourGlobal &&
+  typeof (ourGlobal as any).CloseEvent !== 'undefined'
+    ? (ourGlobal as any).CloseEvent
+    : class CloserEvent extends Event {
+      reason: string
+      code: number
+      wasClean: boolean
+
+      constructor(type: string, init: {reason: string; code: number; wasClean: boolean}) {
+        super(type)
+        this.reason = init.reason
+        this.code = init.code
+        this.wasClean = init.wasClean
+      }
+    }
+
 describe('createConnect', () => {
   it('emits the connection upon successfully open', async () => {
     const mockWs = createMockWS()
@@ -78,7 +98,8 @@ describe('createConnect', () => {
     expect(res.length).toBe(1)
     expect(res[0]).toBeInstanceOf(Error)
     const err0 = res[0]
-    if (!(err0 instanceof WebSocketError)) throw new Error('Expected WebSocketError')
+    if (!(err0 instanceof WebSocketError))
+      throw new Error('Expected WebSocketError')
     expect(err0.type).toEqual('CONNECTION_ERROR')
   })
 
@@ -89,11 +110,13 @@ describe('createConnect', () => {
     const conn$ = connect('https://mock')
 
     setTimeout(() => {
-      mockWs.onclose!({
-        reason: 'Unexpected close',
-        code: 1006,
-        wasClean: false,
-      } as CloseEvent)
+      mockWs.onclose!(
+        new CloserEvent('close', {
+          reason: 'Unexpected close',
+          code: 1006,
+          wasClean: false,
+        }),
+      )
     }, 10)
 
     const res = await lastValueFrom(
@@ -106,7 +129,8 @@ describe('createConnect', () => {
     expect(res.length).toBe(1)
     expect(res[0]).toBeInstanceOf(Error)
     const err1 = res[0]
-    if (!(err1 instanceof WebSocketError)) throw new Error('Expected WebSocketError')
+    if (!(err1 instanceof WebSocketError))
+      throw new Error('Expected WebSocketError')
     expect(err1.type).toEqual('CONNECTION_CLOSED')
     expect(err1.code).toEqual(1006)
     expect(err1.reason).toEqual('Unexpected close')

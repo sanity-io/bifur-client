@@ -2,7 +2,8 @@
   "extends": "@sanity/tsconfig/strictest",
   "compilerOptions": {
     "rootDir": ".",
-    "outDir": "./dist"
+    "outDir": "./dist",
+    "lib": ["es2023"]
   },
   "include": ["./src"]
 }

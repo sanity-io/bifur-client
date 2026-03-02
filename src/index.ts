@@ -1,9 +1,9 @@
-import type {BifurClient, SanityClientLike} from './types'
+import type {BifurClient, SanityClientLike, EventTargetLike} from './types'
 import {createClient, type BifurClientOptions} from './createClient'
 import {createConnect} from './createConnect'
 import {timeoutFirstWith} from './operators'
 import {shareReplay, takeUntil} from 'rxjs/operators'
-import {throwError, fromEvent, type Observable, of} from 'rxjs'
+import {throwError, fromEvent, type Observable, of, NEVER} from 'rxjs'
 
 /**
  * @public
@@ -34,9 +34,10 @@ export function fromUrl(
 ): BifurClient {
   const {timeout, token$} = options
 
+  const ourGlobal: unknown = globalThis
   const connect = createConnect<WebSocket>(
     (url: string, protocols?: string | string[]) =>
-      new window.WebSocket(url, protocols),
+      new globalThis.WebSocket(url, protocols),
   )
 
   return createClient(
@@ -53,9 +54,25 @@ export function fromUrl(
           )
         : id,
       shareReplay({refCount: true}),
-      takeUntil(fromEvent(window, 'beforeunload')), // ensure graceful disconnect
+      takeUntil(
+        // ensure graceful disconnect in browsers
+        isEventTargetLike(ourGlobal)
+          ? fromEvent(ourGlobal, 'beforeunload')
+          : NEVER,
+      ),
     ),
     {token$},
+  )
+}
+
+function isEventTargetLike(thing: unknown): thing is EventTargetLike {
+  return (
+    typeof thing === 'object' &&
+    thing !== null &&
+    'addEventListener' in thing &&
+    typeof thing.addEventListener === 'function' &&
+    'removeEventListener' in thing &&
+    typeof thing.removeEventListener === 'function'
   )
 }
 

@@ -1,7 +1,7 @@
 import {Observable} from 'rxjs'
 
 export interface WebSocket {
-  onclose: ((this: this, ev: CloseEvent) => any) | null
+  onclose: ((this: this, ev: any) => any) | null
   onerror: ((this: this, ev: any) => any) | null
   onmessage: ((this: this, ev: MessageEvent) => any) | null
   onopen: ((this: this, ev: any) => any) | null
