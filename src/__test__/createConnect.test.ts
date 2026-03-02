@@ -1,14 +1,45 @@
-import {createConnect, WebSocket, WebSocketError} from '../createConnect'
+import {describe, expect, it} from 'vitest'
+import {createConnect, WebSocketError} from '../createConnect'
 import {catchError, take, takeUntil, tap, toArray} from 'rxjs/operators'
 import {lastValueFrom, of, timer} from 'rxjs'
+import type {WebSocketLike} from '../types'
 
-const createMockWS = (): WebSocket => ({
+const createMockWS = (): WebSocketLike => ({
   onclose: null,
   onerror: null,
   onmessage: null,
   onopen: null,
   close(_code?: number, _reason?: string) {},
 })
+
+// TypeScript is weird and won't let us do type-narrowing on globalThis,
+// so we do a dance in order to check for properties that are not defined
+// in the `globalThis` typings, but might still be present at runtime.
+const ourGlobal: unknown = globalThis
+
+// Use CloseEvent from global if it exists, otherwise create a minimal mock
+// that replicates it with the properties we need.
+const CloseEvent =
+  typeof ourGlobal === 'object' &&
+  ourGlobal !== null &&
+  'CloseEvent' in ourGlobal &&
+  typeof (ourGlobal as any).CloseEvent !== 'undefined'
+    ? (ourGlobal as any).CloseEvent
+    : class CloserEvent extends Event {
+        reason: string
+        code: number
+        wasClean: boolean
+
+        constructor(
+          type: string,
+          init: {reason: string; code: number; wasClean: boolean},
+        ) {
+          super(type)
+          this.reason = init.reason
+          this.code = init.code
+          this.wasClean = init.wasClean
+        }
+      }
 
 describe('createConnect', () => {
   it('emits the connection upon successfully open', async () => {
@@ -69,14 +100,17 @@ describe('createConnect', () => {
 
     const res = await lastValueFrom(
       conn$.pipe(
-        catchError((err: WebSocketError) => of(err)),
+        catchError((err: unknown) => of(err)),
         toArray(),
       ),
     )
 
     expect(res.length).toBe(1)
     expect(res[0]).toBeInstanceOf(Error)
-    expect((<WebSocketError>res[0]).type).toEqual('CONNECTION_ERROR')
+    const err0 = res[0]
+    if (!(err0 instanceof WebSocketError))
+      throw new Error('Expected WebSocketError')
+    expect(err0.type).toEqual('CONNECTION_ERROR')
   })
 
   it('throws an error on unexpected close', async () => {
@@ -86,24 +120,29 @@ describe('createConnect', () => {
     const conn$ = connect('https://mock')
 
     setTimeout(() => {
-      mockWs.onclose!({
-        reason: 'Unexpected close',
-        code: 1006,
-        wasClean: false,
-      } as CloseEvent)
+      mockWs.onclose!(
+        new CloseEvent('close', {
+          reason: 'Unexpected close',
+          code: 1006,
+          wasClean: false,
+        }),
+      )
     }, 10)
 
     const res = await lastValueFrom(
       conn$.pipe(
-        catchError((err: WebSocketError) => of(err)),
+        catchError((err: unknown) => of(err)),
         toArray(),
       ),
     )
 
     expect(res.length).toBe(1)
     expect(res[0]).toBeInstanceOf(Error)
-    expect((<WebSocketError>res[0]).type).toEqual('CONNECTION_CLOSED')
-    expect((<WebSocketError>res[0]).code).toEqual(1006)
-    expect((<WebSocketError>res[0]).reason).toEqual('Unexpected close')
+    const err1 = res[0]
+    if (!(err1 instanceof WebSocketError))
+      throw new Error('Expected WebSocketError')
+    expect(err1.type).toEqual('CONNECTION_CLOSED')
+    expect(err1.code).toEqual(1006)
+    expect(err1.reason).toEqual('Unexpected close')
   })
 })

@@ -53,3 +53,39 @@ export interface SanityClientLike {
   config(): {dataset: string; token?: string}
   getUrl(path: string): string
 }
+
+/**
+ * @internal
+ */
+export interface EventTargetLike {
+  addEventListener(
+    type: string,
+    listener: (evt: Event) => void,
+    options?: boolean,
+  ): void
+  removeEventListener(
+    type: string,
+    listener: (evt: Event) => void,
+    options?: boolean,
+  ): void
+}
+
+/**
+ * @internal
+ */
+export interface CloseEventLike {
+  reason: string
+  code: number
+  wasClean: boolean
+}
+
+/**
+ * @internal
+ */
+export interface WebSocketLike {
+  onclose: ((this: this, ev: any) => any) | null
+  onerror: ((this: this, ev: any) => any) | null
+  onmessage: ((this: this, ev: MessageEvent) => any) | null
+  onopen: ((this: this, ev: any) => any) | null
+  close(code?: number, reason?: string): void
+}

@@ -3,7 +3,6 @@ import {
   filter,
   finalize,
   map,
-  mapTo,
   mergeMap,
   share,
   shareReplay,
@@ -23,7 +22,7 @@ import {
 } from 'rxjs'
 
 import {customAlphabet} from 'nanoid'
-import {
+import type {
   BifurClient,
   JSONRpcMessage,
   RequestMethod,
@@ -115,7 +114,10 @@ export const createClient = (
           token
             ? call(ws, 'authorization', {
                 authorization: `Bearer ${token}`,
-              }).pipe(take(1), mapTo(ws))
+              }).pipe(
+                take(1),
+                map(() => ws),
+              )
             : of(ws),
         ),
         shareReplay({refCount: true, bufferSize: 1}),
@@ -161,9 +163,9 @@ export const createClient = (
               filter(
                 message =>
                   message.method === `${method}_subscription` &&
-                  message.params.subscription === subscriptionId,
+                  message.params['subscription'] === subscriptionId,
               ),
-              map(message => message.params.result),
+              map(message => message.params['result']),
               finalize(() => {
                 if (
                   ws.readyState !== ws.CLOSED &&

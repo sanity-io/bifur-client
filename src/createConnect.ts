@@ -1,12 +1,5 @@
 import {Observable} from 'rxjs'
-
-export interface WebSocket {
-  onclose: ((this: this, ev: CloseEvent) => any) | null
-  onerror: ((this: this, ev: any) => any) | null
-  onmessage: ((this: this, ev: MessageEvent) => any) | null
-  onopen: ((this: this, ev: any) => any) | null
-  close(code?: number, reason?: string): void
-}
+import type {WebSocketLike} from './types'
 
 type ErrorType = 'CONNECTION_ERROR' | 'CONNECTION_CLOSED'
 
@@ -27,7 +20,7 @@ export class WebSocketError extends Error {
   }
 }
 
-export function createConnect<T extends WebSocket>(
+export function createConnect<T extends WebSocketLike>(
   getWebsocketInstance: (url: string, protocols?: string | string[]) => T,
 ) {
   return (url: string) => {
@@ -36,17 +29,17 @@ export function createConnect<T extends WebSocket>(
 
       let didUnsubscribe = false
 
-      const onOpen: WebSocket['onopen'] = () => {
+      const onOpen: WebSocketLike['onopen'] = () => {
         subscriber.next(ws)
       }
 
-      const onError: WebSocket['onerror'] = () => {
+      const onError: WebSocketLike['onerror'] = () => {
         subscriber.error(
           new WebSocketError('WebSocket connection error', 'CONNECTION_ERROR'),
         )
       }
 
-      const onClose: WebSocket['onclose'] = ev => {
+      const onClose: WebSocketLike['onclose'] = ev => {
         if (!didUnsubscribe) {
           subscriber.error(
             new WebSocketError(
