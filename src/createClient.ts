@@ -23,7 +23,7 @@ import {
 } from 'rxjs'
 
 import {customAlphabet} from 'nanoid'
-import {
+import type {
   BifurClient,
   JSONRpcMessage,
   RequestMethod,

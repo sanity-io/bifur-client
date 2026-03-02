@@ -3,7 +3,7 @@ import {createClient, type BifurClientOptions} from './createClient'
 import {createConnect} from './createConnect'
 import {timeoutFirstWith} from './operators'
 import {shareReplay, takeUntil} from 'rxjs/operators'
-import {throwError, fromEvent, Observable, of} from 'rxjs'
+import {throwError, fromEvent, type Observable, of} from 'rxjs'
 
 /**
  * @public
@@ -17,7 +17,7 @@ const id = <T>(arg: T): T => arg
 
 export type {SubscribeMethods, RequestMethod, RequestParams} from './types'
 export {ERROR_CODES} from './errorCodes'
-export {BifurClient, type BifurClientOptions}
+export {type BifurClient, type BifurClientOptions}
 export {createClient, type SanityClientLike}
 
 /**
