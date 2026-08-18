@@ -3,7 +3,8 @@
   "compilerOptions": {
     "rootDir": ".",
     "outDir": "./dist",
-    "lib": ["es2023"]
+    "jsx": "react-jsx",
+    "lib": ["es2023", "dom", "dom.iterable"]
   },
   "include": ["./src"]
 }

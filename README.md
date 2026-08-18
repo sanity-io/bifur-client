@@ -43,10 +43,10 @@ const bifur = fromUrl('wss://example.sanity.io/socket/production', {
 
 #### Options
 
-| Option | Type | Description |
-|--------|------|-------------|
-| `timeout` | `number` | Milliseconds to wait before timing out the initial connection |
-| `token$` | `Observable<string \| null>` | Observable of auth tokens. Emitting a new value re-authenticates the connection |
+| Option    | Type                         | Description                                                                     |
+| --------- | ---------------------------- | ------------------------------------------------------------------------------- |
+| `timeout` | `number`                     | Milliseconds to wait before timing out the initial connection                   |
+| `token$`  | `Observable<string \| null>` | Observable of auth tokens. Emitting a new value re-authenticates the connection |
 
 ### Presence example
 
@@ -92,16 +92,16 @@ bifur.heartbeats.subscribe((timestamp) => {
 import {ERROR_CODES} from '@sanity/bifur-client'
 
 // Connection-level
-ERROR_CODES.BAD_REQUEST     // 4000
-ERROR_CODES.UNAUTHORIZED    // 4001
-ERROR_CODES.NOT_FOUND       // 4004
+ERROR_CODES.BAD_REQUEST // 4000
+ERROR_CODES.UNAUTHORIZED // 4001
+ERROR_CODES.NOT_FOUND // 4004
 
 // Application-level (JSON-RPC)
-ERROR_CODES.INVALID_REQUEST        // -32600
-ERROR_CODES.METHOD_NOT_FOUND       // -32601
-ERROR_CODES.INVALID_PARAMS         // -32602
+ERROR_CODES.INVALID_REQUEST // -32600
+ERROR_CODES.METHOD_NOT_FOUND // -32601
+ERROR_CODES.INVALID_PARAMS // -32602
 ERROR_CODES.SUBSCRIPTION_NOT_FOUND // -32602
-ERROR_CODES.PARSE_ERROR            // -32700
+ERROR_CODES.PARSE_ERROR // -32700
 ```
 
 ## License

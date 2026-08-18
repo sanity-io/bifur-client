@@ -1,0 +1,11 @@
+allowBuilds:
+  esbuild: false
+
+minimumReleaseAge: 4320
+minimumReleaseAgeExclude:
+  - '@oxfmt/*'
+  - '@oxlint/*'
+  - '@sanity/*'
+  - 'oxfmt'
+  - 'oxlint'
+  - 'oxlint-tsgolint'

@@ -12,7 +12,6 @@ jobs:
         node-version:
           - 24
           - 22
-          - 20
     steps:
       - uses: actions/checkout@v6
       - uses: pnpm/action-setup@v4
@@ -24,3 +23,5 @@ jobs:
       - run: pnpm run build
       - run: pnpm test
       - run: pnpm run type-check
+      - run: pnpm lint
+      - run: pnpm knip
