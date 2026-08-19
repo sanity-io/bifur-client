@@ -47,6 +47,7 @@ describe('fromUrl with react-rx useObservable', () => {
 
   afterEach(() => {
     cleanup()
+    vi.useRealTimers()
     vi.unstubAllGlobals()
   })
 
@@ -81,10 +82,20 @@ describe('fromUrl with react-rx useObservable', () => {
       expect(sockets).toHaveLength(1)
       expect(sockets[0]!.closeCalls).toHaveLength(0)
 
+      // Fake timers from here so the wall-clock disconnect grace can be
+      // advanced instead of waited out (`shouldAdvanceTime` keeps React's
+      // real-time scheduling flowing underneath).
+      vi.useFakeTimers({shouldAdvanceTime: true})
       root.unmount()
-      await sleep(50)
+      await vi.advanceTimersByTimeAsync(1_000)
 
-      // ...and unmounting closes it gracefully on the next disconnect tick
+      // ...unmounting doesn't close it until the disconnect grace elapses...
+      expect(sockets).toHaveLength(1)
+      expect(sockets[0]!.closeCalls).toHaveLength(0)
+
+      await vi.advanceTimersByTimeAsync(5_000)
+
+      // ...and then it closes gracefully
       expect(sockets).toHaveLength(1)
       expect(sockets[0]!.closeCalls).toEqual([
         {...GRACEFUL_CLOSE, readyStateAtCall: sockets[0]!.OPEN},
@@ -120,9 +131,11 @@ describe('fromUrl with react-rx useObservable', () => {
     const {unmount} = render(<HeartbeatComponent />, {reactStrictMode: true})
     expect(sockets[0]!.readyState).toBe(sockets[0]!.CONNECTING)
 
+    // Fake timers so the wall-clock disconnect grace can be advanced past
+    vi.useFakeTimers({shouldAdvanceTime: true})
     unmount()
     // teardown runs while the handshake is still in flight — no close allowed
-    await sleep(50)
+    await vi.advanceTimersByTimeAsync(6_000)
     expect(sockets[0]!.closeCalls).toHaveLength(0)
 
     // handshake settles → the deferred close runs against the OPEN socket
