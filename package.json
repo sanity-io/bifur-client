@@ -1,6 +1,6 @@
 {
   "name": "@sanity/bifur-client",
-  "version": "2.0.1",
+  "version": "2.0.2",
   "description": "WebSocket client for Sanity's Bifur real-time service, communicating over JSON-RPC 2.0 and returning RxJS Observables",
   "keywords": [
     "bifur",
