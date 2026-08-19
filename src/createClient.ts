@@ -1,27 +1,24 @@
+import {customAlphabet} from 'nanoid'
 import {
+  combineLatest,
+  defer,
   distinctUntilChanged,
+  EMPTY,
   filter,
   finalize,
+  fromEvent,
   map,
+  merge,
   mergeMap,
+  Observable,
+  of,
+  partition,
   share,
   shareReplay,
   switchMap,
   take,
-} from 'rxjs/operators'
-
-import {
-  combineLatest,
-  defer,
-  EMPTY,
-  fromEvent,
-  merge,
-  Observable,
-  of,
-  partition,
 } from 'rxjs'
 
-import {customAlphabet} from 'nanoid'
 import type {
   BifurClient,
   JSONRpcMessage,
@@ -48,11 +45,11 @@ function formatRequest(method: string, params: RequestParams, id: string) {
   })
 }
 
-function tryParse<T>(input: string): [Error] | [null, T] {
+function tryParse(input: string): [Error] | [null, JSONRpcMessage<any>] {
   try {
-    return [null, JSON.parse(input)]
+    return [null, JSON.parse(input) as JSONRpcMessage<any>]
   } catch (error: unknown) {
-    return error instanceof Error ? [error] : [new Error(`${error}`)]
+    return error instanceof Error ? [error] : [new Error(String(error))]
   }
 }
 
@@ -82,15 +79,13 @@ export const createClient = (
 ): BifurClient => {
   const {token$, getNextRequestId = defaultGetNextRequestId} = options
   const [heartbeats$, responses$] = partition(
-    connection$.pipe(
-      switchMap(connection => fromEvent<MessageEvent>(connection, 'message')),
-    ),
-    event => event.data === HEARTBEAT,
+    connection$.pipe(switchMap((connection) => fromEvent<MessageEvent>(connection, 'message'))),
+    (event) => event.data === HEARTBEAT,
   )
 
   const parsedResponses$ = responses$.pipe(
-    mergeMap(response => {
-      const [err, msg] = tryParse<JSONRpcMessage<any>>(response.data)
+    mergeMap((response) => {
+      const [err, msg] = tryParse(response.data)
       if (err) {
         console.warn('Unable to parse message: %s', err.message)
         return EMPTY
@@ -124,15 +119,11 @@ export const createClient = (
       )
     : connection$
 
-  function call<T>(
-    ws: WebSocket,
-    method: string,
-    params: RequestParams = {},
-  ): Observable<T> {
+  function call<T>(ws: WebSocket, method: string, params: RequestParams = {}): Observable<T> {
     const requestId = getNextRequestId()
     return merge(
       parsedResponses$.pipe(
-        filter(rpcResult => rpcResult.id === requestId),
+        filter((rpcResult) => rpcResult.id === requestId),
         map((rpcResult): T => rpcResult.result),
       ),
       defer(() => {
@@ -146,7 +137,7 @@ export const createClient = (
   function requestMethod<T>(method: RequestMethod, params?: RequestParams) {
     return authedConnection$.pipe(
       take(1),
-      mergeMap(ws => call<T>(ws, method, params).pipe(take(1))),
+      mergeMap((ws) => call<T>(ws, method, params).pipe(take(1))),
     )
   }
 
@@ -155,28 +146,21 @@ export const createClient = (
   function requestSubscribe(method: SubscribeMethods, params?: RequestParams) {
     return authedConnection$.pipe(
       take(1),
-      mergeMap(ws =>
+      mergeMap((ws) =>
         call<string>(ws, `${method}_subscribe`, params).pipe(
           take(1),
-          mergeMap(subscriptionId =>
+          mergeMap((subscriptionId) =>
             parsedResponses$.pipe(
               filter(
-                message =>
+                (message) =>
                   message.method === `${method}_subscription` &&
                   message.params['subscription'] === subscriptionId,
               ),
-              map(message => message.params['result']),
+              map((message) => message.params['result']),
               finalize(() => {
-                if (
-                  ws.readyState !== ws.CLOSED &&
-                  ws.readyState !== ws.CLOSING
-                ) {
+                if (ws.readyState !== ws.CLOSED && ws.readyState !== ws.CLOSING) {
                   ws.send(
-                    formatRequest(
-                      `${method}_unsubscribe`,
-                      {subscriptionId},
-                      getNextRequestId(),
-                    ),
+                    formatRequest(`${method}_unsubscribe`, {subscriptionId}, getNextRequestId()),
                   )
                 }
               }),
@@ -191,14 +175,10 @@ export const createClient = (
     // heartbeat$ is a stream of date objects representing when the "last message was received"
     // it will keep the connection open until it is unsubscribed and can therefore be used to keep connection alive
     // between requests
-    heartbeats: merge(authedConnection$, heartbeats$, responses$).pipe(
-      map(() => new Date()),
-    ),
+    heartbeats: merge(authedConnection$, heartbeats$, responses$).pipe(map(() => new Date())),
 
-    listen: (method: SubscribeMethods, params?: RequestParams) =>
-      requestSubscribe(method, params),
+    listen: (method: SubscribeMethods, params?: RequestParams) => requestSubscribe(method, params),
 
-    request: (method: RequestMethod, params?: RequestParams) =>
-      requestMethod(method, params),
+    request: (method: RequestMethod, params?: RequestParams) => requestMethod(method, params),
   }
 }
