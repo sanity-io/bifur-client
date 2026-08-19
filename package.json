@@ -59,7 +59,7 @@
     "watch": "pkg build --strict --watch"
   },
   "dependencies": {
-    "nanoid": "^5.1.6",
+    "nanoid": "^6.0.1",
     "rxjs": "^7.8.2"
   },
   "devDependencies": {
