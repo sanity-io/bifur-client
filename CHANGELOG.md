@@ -1,5 +1,11 @@
 # @sanity/bifur-client
 
+## 2.0.1
+
+### Patch Changes
+
+- [#36](https://github.com/sanity-io/bifur-client/pull/36) [`bffbbc6`](https://github.com/sanity-io/bifur-client/commit/bffbbc6a74af09bfaa779b4515b6296947c19974) Thanks [@stipsan](https://github.com/stipsan)! - Republish with npm trusted publishing so 2.0.1 includes provenance.
+
 ## 2.0.0
 
 ### Major Changes
