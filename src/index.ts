@@ -25,6 +25,12 @@ export interface FromUrlOptions {
 
 const id = <T>(arg: T): T => arg
 
+/**
+ * How long the shared connection stays open after its last subscriber leaves.
+ * Matches the studio's `LISTENER_RESET_DELAY` convention (5s).
+ */
+const DISCONNECT_GRACE_PERIOD = 5_000
+
 export type {SubscribeMethods, RequestMethod, RequestParams} from './types'
 export {ERROR_CODES} from './errorCodes'
 export {type BifurClient, type BifurClientOptions}
@@ -58,55 +64,29 @@ export function fromUrl(url: string, options: FromUrlOptions = {}): BifurClient 
           )
         : id,
       // Close the socket right away when the page unloads — placed before the
-      // `share` so it doesn't wait on the disconnect tick below.
+      // `share` so it doesn't wait on the disconnect grace below.
       takeUntil(isEventTargetLike(ourGlobal) ? fromEvent(ourGlobal, 'beforeunload') : NEVER),
-      // One shared connection for all subscribers. Disconnect one tick after
-      // the last unsubscribe, on the same task queue React flushes effects on
-      // — same-queue tasks run in order, so a pending effect resubscribe
-      // (react-rx's `useObservable` unsubscribes during render, resubscribes
-      // from an effect) always beats the disconnect.
+      // One shared connection for all subscribers. Disconnect a wall-clock
+      // grace period after the last unsubscribe, so momentary zero-subscriber
+      // gaps (react-rx's `useObservable` unsubscribes during render and only
+      // resubscribes from a passive effect) reuse the socket instead of
+      // closing and reopening it. The grace must be wall-clock time, not a
+      // task-queue tick: under boot load React's scheduler works in ~5ms
+      // slices and re-posts its host callback, so the effect flush that
+      // resubscribes completes an unbounded number of tasks after teardown —
+      // measured at 96–250ms on real studio boots, where every fixed-tick
+      // notifier (`timer(0)`, chained timers, `setImmediate`/`MessageChannel`)
+      // still churned 2–3 sockets per boot. See
+      // https://github.com/sanity-io/sanity/pull/14152 for the measurements.
       share({
         connector: () => new ReplaySubject<WebSocket>(1),
         resetOnError: true,
         resetOnComplete: true,
-        resetOnRefCountZero: nextTask,
+        resetOnRefCountZero: () => timer(DISCONNECT_GRACE_PERIOD),
       }),
     ),
     {token$},
   )
-}
-
-/**
- * Emits one tick on the task queue React's scheduler uses for passive effects
- * (`setImmediate` in Node and jsdom, `MessageChannel` in browsers). Tasks on
- * one queue run in order, so a tick requested after React schedules an effect
- * flush always runs after that flush. Falls back to a plain timer where
- * neither exists.
- */
-function nextTask(): Observable<number> {
-  const {setImmediate: schedule, clearImmediate: cancel} = globalThis as {
-    setImmediate?: (callback: () => void) => unknown
-    clearImmediate?: (handle: unknown) => void
-  }
-  if (schedule && cancel) {
-    return new Observable((subscriber) => {
-      const handle = schedule(() => subscriber.next(0))
-      return () => cancel(handle)
-    })
-  }
-  if (typeof MessageChannel === 'function') {
-    return new Observable((subscriber) => {
-      const {port1, port2} = new MessageChannel()
-      port1.onmessage = () => subscriber.next(0)
-      port2.postMessage(null)
-      return () => {
-        port1.onmessage = null
-        port1.close()
-        port2.close()
-      }
-    })
-  }
-  return timer(0)
 }
 
 function isEventTargetLike(thing: unknown): thing is EventTargetLike {

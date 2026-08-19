@@ -94,7 +94,7 @@ describe('fromUrl', () => {
     expect(sockets[0]!.closeCalls).toHaveLength(0)
   })
 
-  it('reuses the open socket for subscribers arriving before the disconnect tick', () => {
+  it('reuses the open socket for subscribers arriving before the disconnect grace elapses', () => {
     const client = fromUrl(SOCKET_URL)
     subscribeToConnection(client)
     sockets[0]!.finishHandshake()
@@ -108,7 +108,7 @@ describe('fromUrl', () => {
     expect(sockets[0]!.closeCalls).toHaveLength(0)
   })
 
-  it('closes an open socket gracefully once the disconnect tick runs without subscribers', () => {
+  it('closes an open socket gracefully once the disconnect grace elapses without subscribers', () => {
     const client = fromUrl(SOCKET_URL)
     subscribeToConnection(client)
     sockets[0]!.finishHandshake()
@@ -130,7 +130,7 @@ describe('fromUrl', () => {
     const client = fromUrl(SOCKET_URL)
     subscribeToConnection(client).unsubscribe()
 
-    // Socket is still CONNECTING when the disconnect tick runs teardown
+    // Socket is still CONNECTING when the disconnect grace runs teardown
     vi.runAllTimers()
     expect(sockets[0]!.closeCalls).toHaveLength(0)
 
@@ -174,7 +174,7 @@ describe('fromUrl', () => {
     expect(error.type).toBe('CONNECTION_ERROR')
   })
 
-  it('closes the socket immediately when the page unloads, without waiting for the disconnect tick', () => {
+  it('closes the socket immediately when the page unloads, without waiting for the disconnect grace', () => {
     const client = fromUrl(SOCKET_URL)
     subscribeToConnection(client)
     sockets[0]!.finishHandshake()
