@@ -41,7 +41,8 @@
     "exports": {
       ".": "./dist/index.js",
       "./package.json": "./package.json"
-    }
+    },
+    "provenance": true
   },
   "scripts": {
     "build": "pnpm run clean && pnpm run pkg:build && pnpm run pkg:check",
