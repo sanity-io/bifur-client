@@ -3,5 +3,6 @@
   "changelog": ["@changesets/changelog-github", {"repo": "sanity-io/bifur-client"}],
   "access": "public",
   "baseBranch": "main",
-  "privatePackages": false
+  "privatePackages": false,
+  "format": "oxfmt"
 }
