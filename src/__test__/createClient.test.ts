@@ -1,3 +1,4 @@
+/* oxlint-disable no-deprecated -- these tests cover the deprecated `token$` option */
 import {BehaviorSubject, config, of, ReplaySubject, type Subscription} from 'rxjs'
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest'
 
