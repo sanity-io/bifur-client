@@ -1,7 +1,7 @@
 import {Observable, type ObservableInput, of, ReplaySubject, share, throwError, timer} from 'rxjs'
 
-import {createClient, type BifurClientOptions} from './createClient'
-import {createConnect, WebSocketError} from './createConnect'
+import {createClient, type BifurClientOptions, type Auth} from './createClient'
+import {createConnect, RpcError, WebSocketError} from './createConnect'
 import {timeoutFirstWith} from './operators'
 import type {BifurClient, SanityClientLike} from './types'
 
@@ -11,10 +11,10 @@ import type {BifurClient, SanityClientLike} from './types'
 export interface FromUrlOptions {
   timeout?: number
   /**
-   * The connection's auth token. Must replay its latest value to new
-   * subscribers. See {@link BifurClientOptions.token$}.
+   * The connection's credentials, as a stream of promises. See
+   * {@link BifurClientOptions.auth}.
    */
-  token$?: Observable<string | null>
+  auth?: Observable<Promise<Auth | undefined>>
   /**
    * How long, in milliseconds, the shared connection stays open after its
    * last subscriber leaves. Defaults to `0`: the socket closes as soon as
@@ -57,9 +57,9 @@ function closeWhenIdle(
 
 export type {SubscribeMethods, RequestMethod, RequestParams} from './types'
 export {ERROR_CODES} from './errorCodes'
-export {type BifurClient, type BifurClientOptions}
+export {type BifurClient, type BifurClientOptions, type Auth}
 export {createClient, type SanityClientLike}
-export {WebSocketError}
+export {RpcError, WebSocketError}
 
 /**
  * Create a BifurClient from a WebSocket URL
@@ -70,7 +70,7 @@ export {WebSocketError}
  * @public
  */
 export function fromUrl(url: string, options: FromUrlOptions = {}): BifurClient {
-  const {timeout, token$, idleTimeout = 0} = options
+  const {timeout, auth, idleTimeout = 0} = options
 
   const connect = createConnect<WebSocket>(
     (url: string, protocols?: string | string[]) => new globalThis.WebSocket(url, protocols),
@@ -95,16 +95,18 @@ export function fromUrl(url: string, options: FromUrlOptions = {}): BifurClient 
         resetOnRefCountZero: closeWhenIdle(idleTimeout),
       }),
     ),
-    {token$},
+    {auth},
   )
 }
 
 /**
- * Options for {@link fromSanityClient}
+ * Options for {@link fromSanityClient}: the same as for {@link fromUrl}.
+ * Without `auth`, the connection is authorized with the client's token, if it
+ * has one.
  *
  * @public
  */
-export type FromSanityClientOptions = Pick<FromUrlOptions, 'timeout' | 'idleTimeout'>
+export type FromSanityClientOptions = FromUrlOptions
 
 /**
  * Create a Bifur client from a `@sanity/client`-like instance
@@ -121,6 +123,6 @@ export function fromSanityClient(
   const {dataset, token} = client.config()
   return fromUrl(client.getUrl(`/socket/${dataset}`).replace(/^http/, 'ws'), {
     ...options,
-    ...(token ? {token$: of(token)} : {}),
+    auth: options.auth ?? (token ? of(Promise.resolve({token})) : undefined),
   })
 }
