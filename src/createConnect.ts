@@ -32,6 +32,24 @@ export class WebSocketError extends Error {
 }
 
 /**
+ * Emitted when the server replies to a request with a JSON-RPC error, for
+ * example when it rejects an `authorization` request. `code` is the JSON-RPC
+ * error code (see `ERROR_CODES`).
+ *
+ * @public
+ */
+export class RpcError extends Error {
+  code: number
+  data: unknown
+  constructor(message: string, code: number, data?: unknown) {
+    super(message)
+    this.name = 'RpcError'
+    this.code = code
+    this.data = data
+  }
+}
+
+/**
  * Closes the socket, but never mid-handshake — that's what makes browsers log
  * "WebSocket is closed before the connection is established". A CONNECTING
  * socket gets its close deferred to `onopen`, and a failed handshake needs no
