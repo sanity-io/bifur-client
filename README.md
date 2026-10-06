@@ -32,22 +32,29 @@ const bifur = fromSanityClient(sanityClient)
 Connect directly to a Bifur WebSocket endpoint:
 
 ```ts
-import {fromUrl} from '@sanity/bifur-client'
-import {of} from 'rxjs'
+import {fromUrl, type Auth} from '@sanity/bifur-client'
+import {BehaviorSubject} from 'rxjs'
+
+const auth = new BehaviorSubject<Promise<Auth | undefined>>(Promise.resolve({token: 'your-token'}))
 
 const bifur = fromUrl('wss://example.sanity.io/socket/production', {
   timeout: 10_000,
-  token$: of('your-token'),
+  auth,
 })
+
+// When the token is about to expire, emit the renewal as a promise. Requests
+// wait for it, then the open socket is authorized with the new token.
+auth.next(renewToken().then((token) => ({token})))
 ```
 
 #### Options
 
-| Option            | Type                         | Description                                                                                            |
-| ----------------- | ---------------------------- | ------------------------------------------------------------------------------------------------------ |
-| `timeout`         | `number`                     | Milliseconds to wait before timing out the initial connection                                          |
-| `token$`          | `Observable<string \| null>` | Observable of auth tokens. Emitting a new value re-authenticates the connection                        |
-| `disconnectDelay` | `number`                     | Milliseconds to keep the socket open after the last subscriber leaves. Defaults to `0` (close at once) |
+| Option            | Type                                     | Description                                                                                                                                    |
+| ----------------- | ---------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| `timeout`         | `number`                                 | Milliseconds to wait before timing out the initial connection                                                                                  |
+| `auth`            | `Observable<Promise<Auth \| undefined>>` | Credentials as promises. Emit a promise when a renewal starts: requests wait for it. Must replay its latest emission, like a `BehaviorSubject` |
+| `token$`          | `Observable<string \| null>`             | **Deprecated**, use `auth`. Observable of tokens. A new token re-authenticates the open socket                                                 |
+| `disconnectDelay` | `number`                                 | Milliseconds to keep the socket open after the last subscriber leaves. Defaults to `0` (close at once)                                         |
 
 ### Presence example
 

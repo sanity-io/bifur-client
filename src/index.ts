@@ -1,6 +1,6 @@
 import {Observable, of, ReplaySubject, share, throwError, timer} from 'rxjs'
 
-import {createClient, type BifurClientOptions} from './createClient'
+import {createClient, type BifurClientOptions, type Auth} from './createClient'
 import {createConnect, WebSocketError} from './createConnect'
 import {timeoutFirstWith} from './operators'
 import type {BifurClient, SanityClientLike} from './types'
@@ -10,6 +10,14 @@ import type {BifurClient, SanityClientLike} from './types'
  */
 export interface FromUrlOptions {
   timeout?: number
+  /**
+   * The connection's credentials, as a stream of promises. See
+   * {@link BifurClientOptions.auth}.
+   */
+  auth?: Observable<Promise<Auth | undefined>>
+  /**
+   * @deprecated Use `auth` instead.
+   */
   token$?: Observable<string | null>
   /**
    * How long, in milliseconds, the shared connection stays open after its
@@ -27,7 +35,7 @@ const id = <T>(arg: T): T => arg
 
 export type {SubscribeMethods, RequestMethod, RequestParams} from './types'
 export {ERROR_CODES} from './errorCodes'
-export {type BifurClient, type BifurClientOptions}
+export {type BifurClient, type BifurClientOptions, type Auth}
 export {createClient, type SanityClientLike}
 export {WebSocketError}
 
@@ -40,7 +48,8 @@ export {WebSocketError}
  * @public
  */
 export function fromUrl(url: string, options: FromUrlOptions = {}): BifurClient {
-  const {timeout, token$, disconnectDelay = 0} = options
+  // oxlint-disable-next-line no-deprecated -- `token$` is still supported until it is removed
+  const {timeout, auth, token$, disconnectDelay = 0} = options
 
   const connect = createConnect<WebSocket>(
     (url: string, protocols?: string | string[]) => new globalThis.WebSocket(url, protocols),
@@ -65,7 +74,8 @@ export function fromUrl(url: string, options: FromUrlOptions = {}): BifurClient 
         resetOnRefCountZero: disconnectDelay > 0 ? () => timer(disconnectDelay) : true,
       }),
     ),
-    {token$},
+    // oxlint-disable-next-line no-deprecated -- `token$` is still supported until it is removed
+    {auth, token$},
   )
 }
 
@@ -80,6 +90,6 @@ export function fromSanityClient(client: SanityClientLike): BifurClient {
   const {dataset, token} = client.config()
   return fromUrl(
     client.getUrl(`/socket/${dataset}`).replace(/^http/, 'ws'),
-    token ? {token$: of(token)} : {},
+    token ? {auth: of(Promise.resolve({token}))} : {},
   )
 }
