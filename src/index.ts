@@ -11,15 +11,19 @@ import type {BifurClient, SanityClientLike} from './types'
 export interface FromUrlOptions {
   timeout?: number
   token$?: Observable<string | null>
+  /**
+   * How long, in milliseconds, the shared connection stays open after its
+   * last subscriber leaves. Defaults to `0`: the socket closes as soon as
+   * nothing uses it, so no timer is left pending. A delay reuses the socket
+   * across short gaps between subscribers, for example when React unmounts
+   * one component and mounts another that uses the same client. The studio
+   * uses 5000: it measured gaps of 96–250ms under boot load
+   * (https://github.com/sanity-io/sanity/pull/14152).
+   */
+  disconnectDelay?: number
 }
 
 const id = <T>(arg: T): T => arg
-
-/**
- * How long the shared connection stays open after its last subscriber leaves.
- * Matches the studio's `LISTENER_RESET_DELAY` convention (5s).
- */
-const DISCONNECT_GRACE_PERIOD = 5_000
 
 export type {SubscribeMethods, RequestMethod, RequestParams} from './types'
 export {ERROR_CODES} from './errorCodes'
@@ -36,7 +40,7 @@ export {WebSocketError}
  * @public
  */
 export function fromUrl(url: string, options: FromUrlOptions = {}): BifurClient {
-  const {timeout, token$} = options
+  const {timeout, token$, disconnectDelay = 0} = options
 
   const connect = createConnect<WebSocket>(
     (url: string, protocols?: string | string[]) => new globalThis.WebSocket(url, protocols),
@@ -52,23 +56,13 @@ export function fromUrl(url: string, options: FromUrlOptions = {}): BifurClient 
             ),
           )
         : id,
-      // One shared connection for all subscribers. Disconnect a wall-clock
-      // grace period after the last unsubscribe, so momentary zero-subscriber
-      // gaps (react-rx's `useObservable` unsubscribes during render and only
-      // resubscribes from a passive effect) reuse the socket instead of
-      // closing and reopening it. The grace must be wall-clock time, not a
-      // task-queue tick: under boot load React's scheduler works in ~5ms
-      // slices and re-posts its host callback, so the effect flush that
-      // resubscribes completes an unbounded number of tasks after teardown —
-      // measured at 96–250ms on real studio boots, where every fixed-tick
-      // notifier (`timer(0)`, chained timers, `setImmediate`/`MessageChannel`)
-      // still churned 2–3 sockets per boot. See
-      // https://github.com/sanity-io/sanity/pull/14152 for the measurements.
+      // One shared connection for all subscribers, closed `disconnectDelay`
+      // after the last one leaves
       share({
         connector: () => new ReplaySubject<WebSocket>(1),
         resetOnError: true,
         resetOnComplete: true,
-        resetOnRefCountZero: () => timer(DISCONNECT_GRACE_PERIOD),
+        resetOnRefCountZero: disconnectDelay > 0 ? () => timer(disconnectDelay) : true,
       }),
     ),
     {token$},

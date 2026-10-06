@@ -223,18 +223,17 @@ describe('fromUrl with token$', () => {
     vi.unstubAllGlobals()
   })
 
-  it('closes the socket once the disconnect grace elapses after the last subscriber leaves', () => {
+  it('closes the socket once the last subscriber leaves', () => {
     const client = fromUrl(SOCKET_URL, {token$: of('token')})
     const heartbeats = client.heartbeats.subscribe({error: () => {}})
     sockets[0]!.finishHandshake()
     sockets[0]!.respond('authorization', true)
     heartbeats.unsubscribe()
 
-    vi.advanceTimersByTime(10_000)
     expect(sockets[0]!.closeCalls).toHaveLength(1)
   })
 
-  it('closes the socket once the disconnect grace elapses after a single request settles', () => {
+  it('closes the socket once a single request settles', () => {
     const client = fromUrl(SOCKET_URL, {token$: of('token')})
     const results: unknown[] = []
     client.request('presence_announce').subscribe((result) => results.push(result))
@@ -248,7 +247,6 @@ describe('fromUrl with token$', () => {
     sockets[0]!.respond('presence_announce', 'ok')
     expect(results).toEqual(['ok'])
 
-    vi.advanceTimersByTime(10_000)
     expect(sockets[0]!.closeCalls).toHaveLength(1)
   })
 
@@ -328,7 +326,7 @@ describe('fromUrl with token$', () => {
       config.onUnhandledError = null
     })
 
-    it('does not error when the disconnect grace closes the socket', () => {
+    it('does not error when the socket closes after the last subscriber leaves', () => {
       const client = fromUrl(SOCKET_URL, {token$: new BehaviorSubject<string | null>('token')})
       const errors: unknown[] = []
       const heartbeats = client.heartbeats.subscribe({error: (err) => errors.push(err)})
@@ -336,7 +334,6 @@ describe('fromUrl with token$', () => {
       sockets[0]!.respond('authorization', true)
       heartbeats.unsubscribe()
 
-      vi.advanceTimersByTime(10_000)
       expect(sockets[0]!.closeCalls).toHaveLength(1)
       expect(sockets[0]!.listenerCount('close')).toBe(0)
 

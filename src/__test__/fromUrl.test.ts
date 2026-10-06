@@ -5,6 +5,8 @@ import {fromUrl, WebSocketError} from '../index'
 import {MockWebSocket} from './mockWebSocket'
 
 const SOCKET_URL = 'wss://example.api.sanity.io/v2022-06-30/socket/test'
+const DISCONNECT_DELAY = 5_000
+
 const GRACEFUL_CLOSE = {
   code: 1000,
   reason: 'WebSockets connection closed by client',
@@ -78,8 +80,21 @@ describe('fromUrl', () => {
     expect(received).toHaveLength(2)
   })
 
-  it('keeps an in-flight handshake alive across a momentary zero-subscriber gap', () => {
+  it('closes an open socket as soon as the last subscriber leaves, by default', () => {
     const client = fromUrl(SOCKET_URL)
+    subscribeToConnection(client)
+    sockets[0]!.finishHandshake()
+    subscriptions.pop()!.unsubscribe()
+
+    expect(sockets[0]!.closeCalls).toEqual([
+      {...GRACEFUL_CLOSE, readyStateAtCall: sockets[0]!.OPEN},
+    ])
+    // No timer is left pending
+    expect(vi.getTimerCount()).toBe(0)
+  })
+
+  it('keeps an in-flight handshake alive across a momentary zero-subscriber gap', () => {
+    const client = fromUrl(SOCKET_URL, {disconnectDelay: DISCONNECT_DELAY})
     subscribeToConnection(client).unsubscribe()
 
     // the regression: this used to close the CONNECTING socket immediately
@@ -94,8 +109,8 @@ describe('fromUrl', () => {
     expect(sockets[0]!.closeCalls).toHaveLength(0)
   })
 
-  it('reuses the open socket for subscribers arriving before the disconnect grace elapses', () => {
-    const client = fromUrl(SOCKET_URL)
+  it('reuses the open socket for subscribers arriving before the disconnect delay elapses', () => {
+    const client = fromUrl(SOCKET_URL, {disconnectDelay: DISCONNECT_DELAY})
     subscribeToConnection(client)
     sockets[0]!.finishHandshake()
     subscriptions.pop()!.unsubscribe()
@@ -108,8 +123,8 @@ describe('fromUrl', () => {
     expect(sockets[0]!.closeCalls).toHaveLength(0)
   })
 
-  it('closes an open socket gracefully once the disconnect grace elapses without subscribers', () => {
-    const client = fromUrl(SOCKET_URL)
+  it('closes an open socket gracefully once the disconnect delay elapses without subscribers', () => {
+    const client = fromUrl(SOCKET_URL, {disconnectDelay: DISCONNECT_DELAY})
     subscribeToConnection(client)
     sockets[0]!.finishHandshake()
     subscriptions.pop()!.unsubscribe()
@@ -128,10 +143,8 @@ describe('fromUrl', () => {
 
   it('never closes a socket mid-handshake: teardown while connecting defers the close until open', () => {
     const client = fromUrl(SOCKET_URL)
+    // Socket is still CONNECTING when the last subscriber leaves
     subscribeToConnection(client).unsubscribe()
-
-    // Socket is still CONNECTING when the disconnect grace runs teardown
-    vi.runAllTimers()
     expect(sockets[0]!.closeCalls).toHaveLength(0)
 
     // Once the handshake settles, the deferred close runs against the OPEN socket
