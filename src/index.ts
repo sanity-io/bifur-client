@@ -1,4 +1,4 @@
-import {Observable, of, ReplaySubject, share, throwError, timer} from 'rxjs'
+import {Observable, type ObservableInput, of, ReplaySubject, share, throwError, timer} from 'rxjs'
 
 import {createClient, type BifurClientOptions} from './createClient'
 import {createConnect, WebSocketError} from './createConnect'
@@ -15,15 +15,45 @@ export interface FromUrlOptions {
    * subscribers. See {@link BifurClientOptions.token$}.
    */
   token$?: Observable<string | null>
+  /**
+   * How long, in milliseconds, the shared connection stays open after its
+   * last subscriber leaves. Defaults to `0`: the socket closes as soon as
+   * nothing uses it, so no timer is left pending. A delay reuses the socket
+   * across short gaps between subscribers, for example when React unmounts
+   * one component and mounts another that uses the same client. Sanity
+   * Studio passes 5000, because it saw gaps of 96–250 ms between subscribers
+   * while booting (https://github.com/sanity-io/sanity/pull/14152).
+   *
+   * `Infinity`, or any delay longer than a timer supports (about 24.8 days),
+   * keeps the socket open after the last subscriber leaves.
+   *
+   * To decide each time, pass a function. It's called whenever the last
+   * subscriber leaves, and the socket closes when the observable it returns
+   * emits. If a subscriber comes back first, the observable is unsubscribed
+   * and the socket is kept. For example, wait 5 seconds, but close at once if
+   * the page is hidden:
+   *
+   * ```ts
+   * idleTimeout: () => (document.visibilityState === 'hidden' ? of(0) : timer(5_000))
+   * ```
+   */
+  idleTimeout?: number | (() => ObservableInput<unknown>)
 }
 
 const id = <T>(arg: T): T => arg
 
-/**
- * How long the shared connection stays open after its last subscriber leaves.
- * Matches the studio's `LISTENER_RESET_DELAY` convention (5s).
- */
-const DISCONNECT_GRACE_PERIOD = 5_000
+// The longest delay `setTimeout` supports. Longer ones fire after about 1 ms.
+const MAX_TIMER_DELAY = 2 ** 31 - 1
+
+// When to close the shared connection once its last subscriber has left, in
+// the form `share`'s `resetOnRefCountZero` takes
+function closeWhenIdle(
+  idleTimeout: number | (() => ObservableInput<unknown>),
+): boolean | (() => ObservableInput<unknown>) {
+  if (typeof idleTimeout === 'function') return idleTimeout
+  if (idleTimeout > MAX_TIMER_DELAY) return false
+  return idleTimeout > 0 ? () => timer(idleTimeout) : true
+}
 
 export type {SubscribeMethods, RequestMethod, RequestParams} from './types'
 export {ERROR_CODES} from './errorCodes'
@@ -40,7 +70,7 @@ export {WebSocketError}
  * @public
  */
 export function fromUrl(url: string, options: FromUrlOptions = {}): BifurClient {
-  const {timeout, token$} = options
+  const {timeout, token$, idleTimeout = 0} = options
 
   const connect = createConnect<WebSocket>(
     (url: string, protocols?: string | string[]) => new globalThis.WebSocket(url, protocols),
@@ -56,23 +86,13 @@ export function fromUrl(url: string, options: FromUrlOptions = {}): BifurClient 
             ),
           )
         : id,
-      // One shared connection for all subscribers. Disconnect a wall-clock
-      // grace period after the last unsubscribe, so momentary zero-subscriber
-      // gaps (react-rx's `useObservable` unsubscribes during render and only
-      // resubscribes from a passive effect) reuse the socket instead of
-      // closing and reopening it. The grace must be wall-clock time, not a
-      // task-queue tick: under boot load React's scheduler works in ~5ms
-      // slices and re-posts its host callback, so the effect flush that
-      // resubscribes completes an unbounded number of tasks after teardown —
-      // measured at 96–250ms on real studio boots, where every fixed-tick
-      // notifier (`timer(0)`, chained timers, `setImmediate`/`MessageChannel`)
-      // still churned 2–3 sockets per boot. See
-      // https://github.com/sanity-io/sanity/pull/14152 for the measurements.
+      // One shared connection for all subscribers, closed `idleTimeout`
+      // after the last one leaves
       share({
         connector: () => new ReplaySubject<WebSocket>(1),
         resetOnError: true,
         resetOnComplete: true,
-        resetOnRefCountZero: () => timer(DISCONNECT_GRACE_PERIOD),
+        resetOnRefCountZero: closeWhenIdle(idleTimeout),
       }),
     ),
     {token$},
@@ -80,16 +100,27 @@ export function fromUrl(url: string, options: FromUrlOptions = {}): BifurClient 
 }
 
 /**
+ * Options for {@link fromSanityClient}
+ *
+ * @public
+ */
+export type FromSanityClientOptions = Pick<FromUrlOptions, 'timeout' | 'idleTimeout'>
+
+/**
  * Create a Bifur client from a `@sanity/client`-like instance
  *
  * @param client - A `@sanity/client`-like instance
+ * @param options - Options for the connection
  * @returns A Bifur client instance
  * @public
  */
-export function fromSanityClient(client: SanityClientLike): BifurClient {
+export function fromSanityClient(
+  client: SanityClientLike,
+  options: FromSanityClientOptions = {},
+): BifurClient {
   const {dataset, token} = client.config()
-  return fromUrl(
-    client.getUrl(`/socket/${dataset}`).replace(/^http/, 'ws'),
-    token ? {token$: of(token)} : {},
-  )
+  return fromUrl(client.getUrl(`/socket/${dataset}`).replace(/^http/, 'ws'), {
+    ...options,
+    ...(token ? {token$: of(token)} : {}),
+  })
 }

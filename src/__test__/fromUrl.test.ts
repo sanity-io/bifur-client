@@ -1,10 +1,12 @@
-import type {Subscription} from 'rxjs'
+import {of, Subject, timer, type Subscription} from 'rxjs'
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest'
 
-import {fromUrl, WebSocketError} from '../index'
+import {fromSanityClient, fromUrl, WebSocketError} from '../index'
 import {MockWebSocket} from './mockWebSocket'
 
 const SOCKET_URL = 'wss://example.api.sanity.io/v2022-06-30/socket/test'
+const IDLE_TIMEOUT = 5_000
+
 const GRACEFUL_CLOSE = {
   code: 1000,
   reason: 'WebSockets connection closed by client',
@@ -78,8 +80,85 @@ describe('fromUrl', () => {
     expect(received).toHaveLength(2)
   })
 
-  it('keeps an in-flight handshake alive across a momentary zero-subscriber gap', () => {
+  it('closes an open socket as soon as the last subscriber leaves, by default', () => {
     const client = fromUrl(SOCKET_URL)
+    subscribeToConnection(client)
+    sockets[0]!.finishHandshake()
+    subscriptions.pop()!.unsubscribe()
+
+    expect(sockets[0]!.closeCalls).toEqual([
+      {...GRACEFUL_CLOSE, readyStateAtCall: sockets[0]!.OPEN},
+    ])
+    // No timer is left pending
+    expect(vi.getTimerCount()).toBe(0)
+  })
+
+  it('keeps the socket open after the last subscriber leaves with an infinite delay', () => {
+    const client = fromUrl(SOCKET_URL, {idleTimeout: Infinity})
+    subscribeToConnection(client)
+    sockets[0]!.finishHandshake()
+    subscriptions.pop()!.unsubscribe()
+
+    vi.advanceTimersByTime(60_000)
+    expect(sockets[0]!.closeCalls).toEqual([])
+    expect(vi.getTimerCount()).toBe(0)
+  })
+
+  it('decides how long to stay open each time the last subscriber leaves, with a function', () => {
+    let hidden = false
+    const client = fromUrl(SOCKET_URL, {
+      idleTimeout: () => (hidden ? of(0) : timer(IDLE_TIMEOUT)),
+    })
+
+    // Visible: a grace period, and a subscriber arriving within it reuses the socket
+    subscribeToConnection(client)
+    sockets[0]!.finishHandshake()
+    subscriptions.pop()!.unsubscribe()
+    vi.advanceTimersByTime(IDLE_TIMEOUT - 1)
+    expect(sockets[0]!.closeCalls).toEqual([])
+    subscribeToConnection(client)
+    vi.advanceTimersByTime(IDLE_TIMEOUT)
+    expect(sockets[0]!.closeCalls).toEqual([])
+
+    // Hidden: closed as soon as the last subscriber leaves
+    hidden = true
+    subscriptions.pop()!.unsubscribe()
+    expect(sockets[0]!.closeCalls).toHaveLength(1)
+  })
+
+  it('closes when a notifier from the idleTimeout function emits', () => {
+    const pagehide = new Subject<void>()
+    const client = fromUrl(SOCKET_URL, {idleTimeout: () => pagehide})
+    subscribeToConnection(client)
+    sockets[0]!.finishHandshake()
+    subscriptions.pop()!.unsubscribe()
+
+    vi.advanceTimersByTime(60_000)
+    expect(sockets[0]!.closeCalls).toEqual([])
+    pagehide.next()
+    expect(sockets[0]!.closeCalls).toHaveLength(1)
+  })
+
+  it('passes idleTimeout through fromSanityClient', () => {
+    const client = fromSanityClient(
+      {
+        config: () => ({dataset: 'test'}),
+        getUrl: (path) => `https://example.api.sanity.io/v2022-06-30${path}`,
+      },
+      {idleTimeout: IDLE_TIMEOUT},
+    )
+    subscribeToConnection(client)
+    expect(sockets[0]!.url).toBe(SOCKET_URL)
+    sockets[0]!.finishHandshake()
+    subscriptions.pop()!.unsubscribe()
+
+    expect(sockets[0]!.closeCalls).toEqual([])
+    vi.advanceTimersByTime(IDLE_TIMEOUT)
+    expect(sockets[0]!.closeCalls).toHaveLength(1)
+  })
+
+  it('keeps an in-flight handshake alive across a momentary zero-subscriber gap', () => {
+    const client = fromUrl(SOCKET_URL, {idleTimeout: IDLE_TIMEOUT})
     subscribeToConnection(client).unsubscribe()
 
     // the regression: this used to close the CONNECTING socket immediately
@@ -94,8 +173,8 @@ describe('fromUrl', () => {
     expect(sockets[0]!.closeCalls).toHaveLength(0)
   })
 
-  it('reuses the open socket for subscribers arriving before the disconnect grace elapses', () => {
-    const client = fromUrl(SOCKET_URL)
+  it('reuses the open socket for subscribers arriving before the idle timeout elapses', () => {
+    const client = fromUrl(SOCKET_URL, {idleTimeout: IDLE_TIMEOUT})
     subscribeToConnection(client)
     sockets[0]!.finishHandshake()
     subscriptions.pop()!.unsubscribe()
@@ -108,8 +187,8 @@ describe('fromUrl', () => {
     expect(sockets[0]!.closeCalls).toHaveLength(0)
   })
 
-  it('closes an open socket gracefully once the disconnect grace elapses without subscribers', () => {
-    const client = fromUrl(SOCKET_URL)
+  it('closes an open socket gracefully once the idle timeout elapses without subscribers', () => {
+    const client = fromUrl(SOCKET_URL, {idleTimeout: IDLE_TIMEOUT})
     subscribeToConnection(client)
     sockets[0]!.finishHandshake()
     subscriptions.pop()!.unsubscribe()
@@ -128,10 +207,8 @@ describe('fromUrl', () => {
 
   it('never closes a socket mid-handshake: teardown while connecting defers the close until open', () => {
     const client = fromUrl(SOCKET_URL)
+    // Socket is still CONNECTING when the last subscriber leaves
     subscribeToConnection(client).unsubscribe()
-
-    // Socket is still CONNECTING when the disconnect grace runs teardown
-    vi.runAllTimers()
     expect(sockets[0]!.closeCalls).toHaveLength(0)
 
     // Once the handshake settles, the deferred close runs against the OPEN socket
