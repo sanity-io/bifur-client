@@ -57,14 +57,6 @@ export interface SanityClientLike {
 /**
  * @internal
  */
-export interface EventTargetLike {
-  addEventListener(type: string, listener: (evt: Event) => void, options?: boolean): void
-  removeEventListener(type: string, listener: (evt: Event) => void, options?: boolean): void
-}
-
-/**
- * @internal
- */
 export interface WebSocketLike {
   readonly CONNECTING: number
   readonly OPEN: number

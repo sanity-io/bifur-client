@@ -40,7 +40,7 @@ describe('fromUrl', () => {
     vi.useFakeTimers()
     sockets = []
     subscriptions = []
-    // Node's globalThis is no EventTarget — graft one on to test `beforeunload`
+    // Node's globalThis is no EventTarget — graft one on to test page events
     unloadTarget = new EventTarget()
     vi.stubGlobal('addEventListener', unloadTarget.addEventListener.bind(unloadTarget))
     vi.stubGlobal('removeEventListener', unloadTarget.removeEventListener.bind(unloadTarget))
@@ -174,17 +174,19 @@ describe('fromUrl', () => {
     expect(error.type).toBe('CONNECTION_ERROR')
   })
 
-  it('closes the socket immediately when the page unloads, without waiting for the disconnect grace', () => {
+  it('leaves closing the socket on page unload to the browser', () => {
     const client = fromUrl(SOCKET_URL)
     subscribeToConnection(client)
     sockets[0]!.finishHandshake()
 
-    // `heartbeats` never completes (it merges never-ending message streams),
-    // so the graceful close is what proves the unload path.
+    // The page may stay after either event: an "unsaved changes" prompt can be
+    // cancelled after `beforeunload`, and a page restored from the
+    // back/forward cache comes back after `pagehide`. The browser closes the
+    // socket itself when the page is unloaded.
     unloadTarget.dispatchEvent(new Event('beforeunload'))
+    unloadTarget.dispatchEvent(new Event('pagehide'))
 
-    expect(sockets[0]!.closeCalls).toEqual([
-      {...GRACEFUL_CLOSE, readyStateAtCall: sockets[0]!.OPEN},
-    ])
+    expect(sockets[0]!.closeCalls).toEqual([])
+    expect(sockets[0]!.readyState).toBe(sockets[0]!.OPEN)
   })
 })
