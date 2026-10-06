@@ -43,10 +43,10 @@ const bifur = fromUrl('wss://example.sanity.io/socket/production', {
 
 #### Options
 
-| Option    | Type                         | Description                                                                     |
-| --------- | ---------------------------- | ------------------------------------------------------------------------------- |
-| `timeout` | `number`                     | Milliseconds to wait before timing out the initial connection                   |
-| `token$`  | `Observable<string \| null>` | Observable of auth tokens. Emitting a new value re-authenticates the connection |
+| Option    | Type                         | Description                                                                                                                                                                                                                                                       |
+| --------- | ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `timeout` | `number`                     | Milliseconds to wait before timing out the initial connection                                                                                                                                                                                                     |
+| `token$`  | `Observable<string \| null>` | Auth token, or `null` for not authenticated. Must replay its latest value to new subscribers, like a `BehaviorSubject` or `shareReplay`, because each new connection subscribes to it and waits for a token. Emitting a new value re-authenticates the connection |
 
 ### Presence example
 
@@ -79,6 +79,8 @@ bifur.heartbeats.subscribe((timestamp) => {
   console.log('Last activity:', timestamp)
 })
 ```
+
+When the socket closes while `heartbeats` is subscribed, it errors with a `WebSocketError` of type `CONNECTION_CLOSED` that carries the close `code` and `reason`. Subscribe again to open a new connection.
 
 ### Request and subscribe methods
 
