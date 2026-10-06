@@ -43,10 +43,11 @@ const bifur = fromUrl('wss://example.sanity.io/socket/production', {
 
 #### Options
 
-| Option    | Type                         | Description                                                                     |
-| --------- | ---------------------------- | ------------------------------------------------------------------------------- |
-| `timeout` | `number`                     | Milliseconds to wait before timing out the initial connection                   |
-| `token$`  | `Observable<string \| null>` | Observable of auth tokens. Emitting a new value re-authenticates the connection |
+| Option            | Type                         | Description                                                                                            |
+| ----------------- | ---------------------------- | ------------------------------------------------------------------------------------------------------ |
+| `timeout`         | `number`                     | Milliseconds to wait before timing out the initial connection                                          |
+| `token$`          | `Observable<string \| null>` | Observable of auth tokens. Emitting a new value re-authenticates the connection                        |
+| `disconnectDelay` | `number`                     | Milliseconds to keep the socket open after the last subscriber leaves. Defaults to `0` (close at once) |
 
 ### Presence example
 

@@ -52,7 +52,7 @@ describe('fromUrl with react-rx useObservable', () => {
   })
 
   it('a cold mount on real (non-act) timing opens exactly one socket that is never closed', async () => {
-    const client = fromUrl(SOCKET_URL)
+    const client = fromUrl(SOCKET_URL, {disconnectDelay: 5_000})
     const HeartbeatComponent = createHeartbeatComponent(client)
 
     // Render without `act`: it flushes effects early, hiding the
@@ -82,14 +82,14 @@ describe('fromUrl with react-rx useObservable', () => {
       expect(sockets).toHaveLength(1)
       expect(sockets[0]!.closeCalls).toHaveLength(0)
 
-      // Fake timers from here so the wall-clock disconnect grace can be
+      // Fake timers from here so the wall-clock disconnect delay can be
       // advanced instead of waited out (`shouldAdvanceTime` keeps React's
       // real-time scheduling flowing underneath).
       vi.useFakeTimers({shouldAdvanceTime: true})
       root.unmount()
       await vi.advanceTimersByTimeAsync(1_000)
 
-      // ...unmounting doesn't close it until the disconnect grace elapses...
+      // ...unmounting doesn't close it until the disconnect delay elapses...
       expect(sockets).toHaveLength(1)
       expect(sockets[0]!.closeCalls).toHaveLength(0)
 
@@ -107,7 +107,7 @@ describe('fromUrl with react-rx useObservable', () => {
   })
 
   it('strict mode double-mounting opens exactly one socket and keeps it open', async () => {
-    const client = fromUrl(SOCKET_URL)
+    const client = fromUrl(SOCKET_URL, {disconnectDelay: 5_000})
     const HeartbeatComponent = createHeartbeatComponent(client)
 
     render(<HeartbeatComponent />, {reactStrictMode: true})
@@ -125,13 +125,13 @@ describe('fromUrl with react-rx useObservable', () => {
   })
 
   it('unmounting mid-handshake never closes the CONNECTING socket', async () => {
-    const client = fromUrl(SOCKET_URL)
+    const client = fromUrl(SOCKET_URL, {disconnectDelay: 5_000})
     const HeartbeatComponent = createHeartbeatComponent(client)
 
     const {unmount} = render(<HeartbeatComponent />, {reactStrictMode: true})
     expect(sockets[0]!.readyState).toBe(sockets[0]!.CONNECTING)
 
-    // Fake timers so the wall-clock disconnect grace can be advanced past
+    // Fake timers so the wall-clock disconnect delay can be advanced past
     vi.useFakeTimers({shouldAdvanceTime: true})
     unmount()
     // teardown runs while the handshake is still in flight — no close allowed
@@ -147,7 +147,7 @@ describe('fromUrl with react-rx useObservable', () => {
   })
 
   it('a quick unmount/remount cycle reuses the socket instead of reconnecting', async () => {
-    const client = fromUrl(SOCKET_URL)
+    const client = fromUrl(SOCKET_URL, {disconnectDelay: 5_000})
     const HeartbeatComponent = createHeartbeatComponent(client)
 
     const first = render(<HeartbeatComponent />, {reactStrictMode: true})
