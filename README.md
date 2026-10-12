@@ -27,6 +27,8 @@ const sanityClient = createClient({
 const bifur = fromSanityClient(sanityClient)
 ```
 
+`fromSanityClient` also accepts `timeout` and `idleTimeout` as a second argument, with the same meaning as for `fromUrl` below.
+
 ### From a WebSocket URL
 
 Connect directly to a Bifur WebSocket endpoint:
@@ -43,10 +45,11 @@ const bifur = fromUrl('wss://example.sanity.io/socket/production', {
 
 #### Options
 
-| Option    | Type                         | Description                                                                     |
-| --------- | ---------------------------- | ------------------------------------------------------------------------------- |
-| `timeout` | `number`                     | Milliseconds to wait before timing out the initial connection                   |
-| `token$`  | `Observable<string \| null>` | Observable of auth tokens. Emitting a new value re-authenticates the connection |
+| Option        | Type                                | Description                                                                                                                                                                                               |
+| ------------- | ----------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `timeout`     | `number`                            | Milliseconds to wait before timing out the initial connection                                                                                                                                             |
+| `token$`      | `Observable<string \| null>`        | Observable of auth tokens. Emitting a new value re-authenticates the connection                                                                                                                           |
+| `idleTimeout` | `number \| (() => ObservableInput)` | Milliseconds to keep the socket open after the last subscriber leaves. Defaults to `0` (closes immediately). Pass a function to decide each time: the socket closes when the observable it returns emits. |
 
 ### Presence example
 
