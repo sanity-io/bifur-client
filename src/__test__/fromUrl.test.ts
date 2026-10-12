@@ -139,6 +139,37 @@ describe('fromUrl', () => {
     expect(sockets[0]!.closeCalls).toHaveLength(1)
   })
 
+  it('authorizes fromSanityClient with the auth option, over the client token', async () => {
+    const client = fromSanityClient(
+      {
+        config: () => ({dataset: 'test', token: 'client-token'}),
+        getUrl: (path) => `https://example.api.sanity.io/v2022-06-30${path}`,
+      },
+      {auth: of(Promise.resolve({token: 'auth-token'}))},
+    )
+    subscribeToConnection(client)
+    sockets[0]!.finishHandshake()
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(JSON.parse(sockets[0]!.sendCalls[0]!.data).params.authorization).toBe(
+      'Bearer auth-token',
+    )
+  })
+
+  it('authorizes fromSanityClient with the client token without the auth option', async () => {
+    const client = fromSanityClient({
+      config: () => ({dataset: 'test', token: 'client-token'}),
+      getUrl: (path) => `https://example.api.sanity.io/v2022-06-30${path}`,
+    })
+    subscribeToConnection(client)
+    sockets[0]!.finishHandshake()
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(JSON.parse(sockets[0]!.sendCalls[0]!.data).params.authorization).toBe(
+      'Bearer client-token',
+    )
+  })
+
   it('passes idleTimeout through fromSanityClient', () => {
     const client = fromSanityClient(
       {
