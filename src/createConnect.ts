@@ -2,8 +2,8 @@ import {Observable} from 'rxjs'
 
 import type {WebSocketLike} from './types'
 
-const CLOSE_CODE_NORMAL = 1000
-const CLOSE_REASON = 'WebSockets connection closed by client'
+export const CLOSE_CODE_NORMAL = 1000
+export const CLOSE_REASON = 'WebSockets connection closed by client'
 
 /**
  * Emitted when the socket errors or is closed by the other end, and when a
