@@ -50,6 +50,24 @@ const bifur = fromUrl('wss://example.sanity.io/socket/production', {
 auth.next(renewToken().then((token) => ({token})))
 ```
 
+#### Closing the connection
+
+`closeOn` lets the host close the connection at a moment it chooses, even while the connection is in use: when it emits, the socket is closed without waiting for `idleTimeout`. Everything still using the connection errors with a `WebSocketError` of type `CONNECTION_CLOSED`, and the next subscriber opens a new socket.
+
+For example, close the socket when the page enters the back/forward cache. An open socket would otherwise either be closed by the browser, which logs an error, or keep the page out of the cache:
+
+```ts
+import {filter, fromEvent} from 'rxjs'
+
+const enteredBackForwardCache$ = fromEvent<PageTransitionEvent>(window, 'pagehide').pipe(
+  filter((event) => event.persisted),
+)
+
+const bifur = fromUrl(url, {auth, idleTimeout: 5_000, closeOn: enteredBackForwardCache$})
+```
+
+Anything that uses the client after `closeOn` has emitted opens a new connection, so make sure nothing does when you close for the back/forward cache. Closing sends nothing to the server first, and requests made while a page is being left, such as a "goodbye" message, can't be relied on to reach the server: they're lost whenever the page is killed or the network drops.
+
 #### Authentication
 
 Each promise from `auth` resolves to one of:
@@ -73,6 +91,7 @@ fromUrl(url, {auth: token$.pipe(map((token) => Promise.resolve(token ? {token} :
 | `timeout`     | `number`                                 | Milliseconds to wait before timing out the initial connection                                                                                                                                             |
 | `auth`        | `Observable<Promise<Auth \| undefined>>` | Stream of promises that resolve to the credentials. Emit a new promise when a renewal starts; requests wait for it. Must replay its latest value to new subscribers, like a `BehaviorSubject`.            |
 | `idleTimeout` | `number \| (() => ObservableInput)`      | Milliseconds to keep the socket open after the last subscriber leaves. Defaults to `0` (closes immediately). Pass a function to decide each time: the socket closes when the observable it returns emits. |
+| `closeOn`     | `Observable<unknown>`                    | Closes the connection when it emits, without waiting for `idleTimeout`. Everything using the connection errors with `CONNECTION_CLOSED`, and the next subscriber reconnects.                              |
 
 ### Presence example
 
