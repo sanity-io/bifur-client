@@ -80,6 +80,8 @@ bifur.heartbeats.subscribe((timestamp) => {
 })
 ```
 
+When the socket closes while `heartbeats` is subscribed, it errors with a `WebSocketError` of type `CONNECTION_CLOSED` that carries the close `code` and `reason`. Subscribe again to open a new connection.
+
 ### Request and subscribe methods
 
 **Request methods:** `presence_rollcall`, `presence_announce`, `presence_disconnect`, `authorization`
