@@ -1,0 +1,30 @@
+name: Publish preview packages
+
+on:
+  pull_request:
+    types: [opened, synchronize, labeled]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read # for checkout
+
+jobs:
+  publish:
+    if: "contains(github.event.pull_request.labels.*.name, 'trigger: preview')"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          cache: pnpm
+          node-version: lts/*
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run build
+      - name: Publish to pkg.pr.new
+        run: pnpm dlx pkg-pr-new publish --no-template --compact
