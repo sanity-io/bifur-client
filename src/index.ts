@@ -1,25 +1,19 @@
-import {
-  fromEvent,
-  NEVER,
-  Observable,
-  of,
-  ReplaySubject,
-  share,
-  takeUntil,
-  throwError,
-  timer,
-} from 'rxjs'
+import {Observable, of, ReplaySubject, share, throwError, timer} from 'rxjs'
 
 import {createClient, type BifurClientOptions} from './createClient'
 import {createConnect, WebSocketError} from './createConnect'
 import {timeoutFirstWith} from './operators'
-import type {BifurClient, SanityClientLike, EventTargetLike} from './types'
+import type {BifurClient, SanityClientLike} from './types'
 
 /**
  * @public
  */
 export interface FromUrlOptions {
   timeout?: number
+  /**
+   * The connection's auth token. Must replay its latest value to new
+   * subscribers. See {@link BifurClientOptions.token$}.
+   */
   token$?: Observable<string | null>
 }
 
@@ -48,7 +42,6 @@ export {WebSocketError}
 export function fromUrl(url: string, options: FromUrlOptions = {}): BifurClient {
   const {timeout, token$} = options
 
-  const ourGlobal: unknown = globalThis
   const connect = createConnect<WebSocket>(
     (url: string, protocols?: string | string[]) => new globalThis.WebSocket(url, protocols),
   )
@@ -63,9 +56,6 @@ export function fromUrl(url: string, options: FromUrlOptions = {}): BifurClient 
             ),
           )
         : id,
-      // Close the socket right away when the page unloads — placed before the
-      // `share` so it doesn't wait on the disconnect grace below.
-      takeUntil(isEventTargetLike(ourGlobal) ? fromEvent(ourGlobal, 'beforeunload') : NEVER),
       // One shared connection for all subscribers. Disconnect a wall-clock
       // grace period after the last unsubscribe, so momentary zero-subscriber
       // gaps (react-rx's `useObservable` unsubscribes during render and only
@@ -86,17 +76,6 @@ export function fromUrl(url: string, options: FromUrlOptions = {}): BifurClient 
       }),
     ),
     {token$},
-  )
-}
-
-function isEventTargetLike(thing: unknown): thing is EventTargetLike {
-  return (
-    typeof thing === 'object' &&
-    thing !== null &&
-    'addEventListener' in thing &&
-    typeof thing.addEventListener === 'function' &&
-    'removeEventListener' in thing &&
-    typeof thing.removeEventListener === 'function'
   )
 }
 
