@@ -1,11 +1,12 @@
 import {customAlphabet} from 'nanoid'
 import {
+  concat,
   defer,
-  distinctUntilChanged,
   EMPTY,
   exhaustMap,
   filter,
   finalize,
+  from,
   fromEvent,
   map,
   merge,
@@ -16,12 +17,13 @@ import {
   partition,
   ReplaySubject,
   share,
+  switchAll,
   switchMap,
   take,
   throwError,
 } from 'rxjs'
 
-import {WebSocketError} from './createConnect'
+import {RpcError, WebSocketError} from './createConnect'
 import type {
   BifurClient,
   JSONRpcMessage,
@@ -116,17 +118,46 @@ interface Connection {
 }
 
 /**
+ * Authentication for the connection: a token, or cookies. With
+ * `{withCredentials: true}`, the client sends no token, and the browser sends
+ * cookies with the WebSocket handshake. A changed cookie session isn't applied
+ * to a socket that is already open, and switching an open socket from a token
+ * to cookies logs a warning, since the socket keeps the token. Accepted so the
+ * same auth stream can be passed to `@sanity/client`.
+ *
+ * @public
+ */
+export type Auth = {token: string} | {withCredentials: true}
+
+/**
  * @public
  */
 export interface BifurClientOptions {
   /**
-   * The connection's auth token, or `null` for not authenticated. Must replay
-   * its latest value to new subscribers, like a `BehaviorSubject` or
-   * `shareReplay`, because each new connection subscribes to it and waits for
-   * a token. Emitting a new value re-authenticates the connection.
+   * The connection's credentials, as a stream of promises. Emit a promise
+   * when a renewal starts, and resolve it with the new credentials: requests
+   * wait until the open socket is authorized with them, without
+   * reconnecting, and are then sent. A promise that resolves to `undefined`
+   * sends no credentials. A promise that never settles keeps requests
+   * waiting.
+   *
+   * A rejected promise errors the connection with the promise's own error.
+   * Until `auth` emits a new promise, every new request opens a socket, gets
+   * the same rejection and closes it again, so don't retry before the
+   * credentials are renewed. The client only handles a promise's rejection
+   * while a socket is open; add your own `.catch` to avoid unhandled
+   * rejections.
+   *
+   * Must replay the latest emission to new subscribers, like a
+   * `BehaviorSubject`. With a plain `Subject`, requests on a new socket wait
+   * until `auth` emits again.
    */
-  token$?: Observable<string | null>
+  auth?: Observable<Promise<Auth | undefined>>
   getNextRequestId?: () => string
+}
+
+function isConnection(connection: Connection | null): connection is Connection {
+  return connection !== null
 }
 
 /**
@@ -145,13 +176,19 @@ export const createClient = (
   connection$: Observable<WebSocket>,
   options: BifurClientOptions = {},
 ): BifurClient => {
-  const {token$, getNextRequestId = defaultGetNextRequestId} = options
+  const {auth, getNextRequestId = defaultGetNextRequestId} = options
+  // One stream per credential change: `null` while a renewal is pending, then
+  // the credentials
+  const credentials$: Observable<Observable<Auth | undefined | null>> | undefined = auth?.pipe(
+    map((promise) => concat(of(null), from(promise))),
+  )
   const [heartbeats$, responses$] = partition(
     connection$.pipe(switchMap((connection) => fromEvent<MessageEvent>(connection, 'message'))),
     (event) => event.data === HEARTBEAT,
   )
 
-  const authedConnection$: Observable<Connection> = connection$.pipe(
+  // Emits `null` while a credential renewal is pending, so requests wait for it
+  const authedConnection$: Observable<Connection | null> = connection$.pipe(
     switchMap((ws) => {
       if (ws.readyState === READY_STATE_CONNECTING) {
         return throwError(() => closedError())
@@ -163,17 +200,33 @@ export const createClient = (
         return errorOnClose(ws)
       }
       const connection: Connection = {ws, messages$: messagesFrom(ws).pipe(share())}
-      const authorized$ = token$
-        ? token$.pipe(
-            distinctUntilChanged(),
-            switchMap((token) =>
-              token
-                ? call(connection, 'authorization', {authorization: `Bearer ${token}`}).pipe(
-                    take(1),
-                    map(() => connection),
-                  )
-                : of(connection),
-            ),
+      // The last token sent on this socket. Recorded when it is sent, since
+      // the socket is authorized with it from then on, even if the reply is
+      // abandoned because new credentials arrived.
+      let sentToken: string | undefined
+      let warnedTokenKept = false
+      const authorize = (credentials: Auth | undefined): Observable<Connection> => {
+        const token = credentials && 'token' in credentials ? credentials.token : undefined
+        if (!token && sentToken && !warnedTokenKept) {
+          // There's no way to take an authorization back on an open socket
+          warnedTokenKept = true
+          console.warn(
+            'Bifur: the open socket stays authorized with the previous token, since credentials without a token cannot replace it. Reconnect to drop the token.',
+          )
+        }
+        if (!token || token === sentToken) {
+          return of(connection)
+        }
+        sentToken = token
+        return call(connection, 'authorization', {authorization: `Bearer ${token}`}).pipe(
+          take(1),
+          map(() => connection),
+        )
+      }
+      const authorized$: Observable<Connection | null> = credentials$
+        ? credentials$.pipe(
+            switchAll(),
+            switchMap((credentials) => (credentials === null ? of(null) : authorize(credentials))),
           )
         : of(connection)
       // Error on close, so the share resets instead of replaying the closed
@@ -185,7 +238,7 @@ export const createClient = (
       return errorOnClose(ws).pipe(mergeWith(authorized$))
     }),
     share({
-      connector: () => new ReplaySubject<Connection>(1),
+      connector: () => new ReplaySubject<Connection | null>(1),
       resetOnError: true,
       resetOnComplete: true,
       resetOnRefCountZero: true,
@@ -201,7 +254,19 @@ export const createClient = (
     return merge(
       messages$.pipe(
         filter((rpcResult) => rpcResult.id === requestId),
-        map((rpcResult) => rpcResult.result as T),
+        // An error reply fails the request, rather than emitting `undefined`
+        mergeMap((rpcResult) =>
+          rpcResult.error
+            ? throwError(
+                () =>
+                  new RpcError(
+                    rpcResult.error!.message,
+                    rpcResult.error!.code,
+                    rpcResult.error!.data,
+                  ),
+              )
+            : of(rpcResult.result as T),
+        ),
       ),
       defer(() => {
         // `send` on a socket that isn't open throws (CONNECTING) or drops the
@@ -232,6 +297,7 @@ export const createClient = (
   // `exhaustMap` keeps a re-authorized socket from sending a request again.
   function requestMethod<T>(method: RequestMethod, params?: RequestParams) {
     return authedConnection$.pipe(
+      filter(isConnection),
       exhaustMap((connection) => call<T>(connection, method, params).pipe(take(1))),
       take(1),
     )
@@ -241,6 +307,7 @@ export const createClient = (
   // keeps the subscription open forever/until unsubscribe
   function requestSubscribe(method: SubscribeMethods, params?: RequestParams) {
     return authedConnection$.pipe(
+      filter(isConnection),
       exhaustMap((connection) =>
         call<string>(connection, `${method}_subscribe`, params).pipe(
           take(1),
@@ -270,7 +337,9 @@ export const createClient = (
     // heartbeat$ is a stream of date objects representing when the "last message was received"
     // it will keep the connection open until it is unsubscribed and can therefore be used to keep connection alive
     // between requests
-    heartbeats: merge(authedConnection$, heartbeats$, responses$).pipe(map(() => new Date())),
+    heartbeats: merge(authedConnection$.pipe(filter(isConnection)), heartbeats$, responses$).pipe(
+      map(() => new Date()),
+    ),
 
     listen: (method: SubscribeMethods, params?: RequestParams) => requestSubscribe(method, params),
 

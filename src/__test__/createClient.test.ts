@@ -1,13 +1,16 @@
 import {BehaviorSubject, config, defer, of, ReplaySubject, retry, type Subscription} from 'rxjs'
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest'
 
-import {createClient, fromUrl, WebSocketError} from '../index'
+import {type Auth, createClient, fromUrl, RpcError, WebSocketError} from '../index'
 import {MockWebSocket} from './mockWebSocket'
 
 const SOCKET_URL = 'wss://example.api.sanity.io/v2022-06-30/socket/test'
 
 const methodsSent = (socket: MockWebSocket) =>
   socket.sendCalls.map(({data}) => JSON.parse(data).method as string)
+
+// Lets settled promises run their callbacks
+const flush = () => new Promise((resolve) => setTimeout(resolve, 0))
 
 const openSocket = () => {
   const ws = new MockWebSocket(SOCKET_URL)
@@ -63,22 +66,24 @@ describe('createClient', () => {
     expect((errors[0] as WebSocketError).type).toBe('CONNECTION_CLOSED')
   })
 
-  it('errors the connection when a token change finds the socket closing', () => {
+  it('errors the connection when a renewal finds the socket closing', async () => {
     const ws = openSocket()
     const connection$ = new ReplaySubject<WebSocket>(1)
-    const token$ = new BehaviorSubject<string | null>('token')
-    const client = createClient(connection$, {token$})
+    const auth = new BehaviorSubject<Promise<Auth | undefined>>(Promise.resolve({token: 'token'}))
+    const client = createClient(connection$, {auth})
     const errors: unknown[] = []
     client.heartbeats.subscribe({error: (err) => errors.push(err)})
     connection$.next(ws as unknown as WebSocket)
+    await flush()
     ws.respond('authorization', true)
 
     // The server has closed the socket, but the browser hasn't fired `onclose` yet
     ws.readyState = ws.CLOSING
-    token$.next('rotated-token')
+    auth.next(Promise.resolve({token: 'rotated-token'}))
+    await flush()
 
     // Nothing is sent, and the connection errors once `close` fires
-    expect(ws.sendCalls.map(({data}) => JSON.parse(data).method)).toEqual(['authorization'])
+    expect(methodsSent(ws)).toEqual(['authorization'])
     expect(errors).toEqual([])
     ws.onclose = null
     ws.disconnect(4001, 'unauthorized')
@@ -109,11 +114,10 @@ describe('createClient', () => {
   it('errors the connection with the close code when the socket closes', () => {
     const ws = openSocket()
     const connection$ = new ReplaySubject<WebSocket>(1)
-    const client = createClient(connection$, {token$: of('token')})
+    const client = createClient(connection$)
     const errors: unknown[] = []
     client.heartbeats.subscribe({error: (err) => errors.push(err)})
     connection$.next(ws as unknown as WebSocket)
-    ws.respond('authorization', true)
 
     // `connection$` itself neither errors nor completes
     ws.onclose = null
@@ -133,13 +137,12 @@ describe('createClient', () => {
     // `connection$` doesn't error on close, so the `close` listeners decide.
     const ws = openSocket()
     const connection$ = new ReplaySubject<WebSocket>(1)
-    const client = createClient(connection$, {token$: of('token')})
+    const client = createClient(connection$)
     let listening: Subscription | undefined
     client.heartbeats.subscribe({error: () => listening?.unsubscribe()})
     connection$.next(ws as unknown as WebSocket)
     const listenErrors: unknown[] = []
     listening = client.listen('presence').subscribe({error: (err) => listenErrors.push(err)})
-    ws.respond('authorization', true)
     ws.respond('presence_subscribe', 'subscription-id')
 
     ws.onclose = null
@@ -147,6 +150,25 @@ describe('createClient', () => {
 
     expect(listening.closed).toBe(true)
     expect(listenErrors).toEqual([])
+  })
+
+  it('errors a request that the server replies to with an error', () => {
+    const ws = openSocket()
+    const client = createClient(of(ws as unknown as WebSocket))
+    const results: unknown[] = []
+    const errors: unknown[] = []
+    client.request('presence_announce').subscribe({
+      next: (result) => results.push(result),
+      error: (err) => errors.push(err),
+    })
+
+    ws.respondError('presence_announce', -32602, 'Invalid params')
+
+    expect(results).toEqual([])
+    expect(errors).toHaveLength(1)
+    expect(errors[0]).toBeInstanceOf(RpcError)
+    expect((errors[0] as RpcError).code).toBe(-32602)
+    expect((errors[0] as RpcError).message).toBe('Invalid params')
   })
 
   it('errors a pending request and subscription when their socket closes', () => {
@@ -189,7 +211,7 @@ describe('createClient', () => {
   it('errors the connection when connection$ emits a socket that is already closed', () => {
     const ws = openSocket()
     ws.disconnect(4001, 'unauthorized')
-    const client = createClient(of(ws as unknown as WebSocket), {token$: of('token')})
+    const client = createClient(of(ws as unknown as WebSocket))
 
     const errors: unknown[] = []
     client.heartbeats.subscribe({error: (err) => errors.push(err)})
@@ -199,13 +221,12 @@ describe('createClient', () => {
     expect((errors[0] as WebSocketError).type).toBe('CONNECTION_CLOSED')
   })
 
-  it('errors a request when the buffered socket has closed since it was authorized', () => {
+  it('errors a request when the buffered socket has closed since it was emitted', () => {
     const ws = openSocket()
     const connection$ = new ReplaySubject<WebSocket>(1)
-    const client = createClient(connection$, {token$: of('token')})
+    const client = createClient(connection$)
     const heartbeats = client.heartbeats.subscribe({error: () => {}})
     connection$.next(ws as unknown as WebSocket)
-    ws.respond('authorization', true)
 
     // The socket closes without `connection$` erroring. `fromUrl` doesn't do
     // this (it errors on `onclose`), but a custom `connection$` might
@@ -214,14 +235,14 @@ describe('createClient', () => {
     const errors: unknown[] = []
     client.request('presence_announce').subscribe({error: (err) => errors.push(err)})
 
-    expect(ws.sendCalls.map(({data}) => JSON.parse(data).method)).toEqual(['authorization'])
+    expect(ws.sendCalls).toEqual([])
     expect(errors).toHaveLength(1)
     expect((errors[0] as WebSocketError).type).toBe('CONNECTION_CLOSED')
     heartbeats.unsubscribe()
   })
 })
 
-describe('fromUrl with token$', () => {
+describe('fromUrl', () => {
   let sockets: MockWebSocket[]
   let subscriptions: Subscription[]
 
@@ -248,21 +269,19 @@ describe('fromUrl with token$', () => {
   })
 
   it('closes the socket once the last subscriber leaves', () => {
-    const client = fromUrl(SOCKET_URL, {token$: of('token')})
+    const client = fromUrl(SOCKET_URL)
     const heartbeats = client.heartbeats.subscribe({error: () => {}})
     sockets[0]!.finishHandshake()
-    sockets[0]!.respond('authorization', true)
     heartbeats.unsubscribe()
 
     expect(sockets[0]!.closeCalls).toHaveLength(1)
   })
 
   it('closes the socket once a single request settles', () => {
-    const client = fromUrl(SOCKET_URL, {token$: of('token')})
+    const client = fromUrl(SOCKET_URL)
     const results: unknown[] = []
     client.request('presence_announce').subscribe((result) => results.push(result))
     sockets[0]!.finishHandshake()
-    sockets[0]!.respond('authorization', true)
 
     // The request keeps the socket open until its reply arrives, however long
     // that takes
@@ -275,11 +294,10 @@ describe('fromUrl with token$', () => {
   })
 
   it('keeps the socket open while a subscription is active', () => {
-    const client = fromUrl(SOCKET_URL, {token$: of('token')})
+    const client = fromUrl(SOCKET_URL)
     const results: unknown[] = []
     const listening = client.listen('presence').subscribe((result) => results.push(result))
     sockets[0]!.finishHandshake()
-    sockets[0]!.respond('authorization', true)
     sockets[0]!.respond('presence_subscribe', 'subscription-id')
 
     vi.advanceTimersByTime(10_000)
@@ -298,13 +316,14 @@ describe('fromUrl with token$', () => {
     expect(sockets[0]!.closeCalls).toHaveLength(1)
   })
 
-  it('reconnects with the current token after the server closes the socket', () => {
-    // The studio's `token$` never completes
-    const token$ = new BehaviorSubject<string | null>('token')
-    const client = fromUrl(SOCKET_URL, {token$})
+  it('reconnects with the current token after the server closes the socket', async () => {
+    // The studio's `auth` never completes
+    const auth = new BehaviorSubject<Promise<Auth | undefined>>(Promise.resolve({token: 'token'}))
+    const client = fromUrl(SOCKET_URL, {auth})
     const heartbeatErrors: unknown[] = []
     subscriptions.push(client.heartbeats.subscribe({error: (err) => heartbeatErrors.push(err)}))
     sockets[0]!.finishHandshake()
+    await vi.advanceTimersByTimeAsync(0)
     sockets[0]!.respond('authorization', true)
 
     // The server has started closing the socket, but `close` hasn't fired yet.
@@ -326,11 +345,12 @@ describe('fromUrl with token$', () => {
 
     // The next request opens a new socket, authorizes it with the current
     // token, and sends there
-    token$.next('rotated-token')
+    auth.next(Promise.resolve({token: 'rotated-token'}))
     const results: unknown[] = []
     subscriptions.push(client.request('presence_announce').subscribe((r) => results.push(r)))
     expect(sockets).toHaveLength(2)
     sockets[1]!.finishHandshake()
+    await vi.advanceTimersByTimeAsync(0)
     expect(JSON.parse(sockets[1]!.sendCalls[0]!.data).params.authorization).toBe(
       'Bearer rotated-token',
     )
@@ -353,11 +373,10 @@ describe('fromUrl with token$', () => {
     })
 
     it('does not error when the socket closes after the last subscriber leaves', () => {
-      const client = fromUrl(SOCKET_URL, {token$: new BehaviorSubject<string | null>('token')})
+      const client = fromUrl(SOCKET_URL)
       const errors: unknown[] = []
       const heartbeats = client.heartbeats.subscribe({error: (err) => errors.push(err)})
       sockets[0]!.finishHandshake()
-      sockets[0]!.respond('authorization', true)
       heartbeats.unsubscribe()
 
       expect(sockets[0]!.closeCalls).toHaveLength(1)
@@ -369,11 +388,10 @@ describe('fromUrl with token$', () => {
     })
 
     it('does not error when the socket closes after requests and subscriptions have left', () => {
-      const client = fromUrl(SOCKET_URL, {token$: new BehaviorSubject<string | null>('token')})
+      const client = fromUrl(SOCKET_URL)
       const errors: unknown[] = []
       const heartbeats = client.heartbeats.subscribe({error: (err) => errors.push(err)})
       sockets[0]!.finishHandshake()
-      sockets[0]!.respond('authorization', true)
       const request = client
         .request('presence_rollcall')
         .subscribe({error: (err) => errors.push(err)})

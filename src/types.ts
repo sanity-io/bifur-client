@@ -35,6 +35,7 @@ export type JSONRpcMessage<T> = {
   method: string
   params: RequestParams
   result: T
+  error?: {code: number; message: string; data?: unknown}
 }
 
 /**
