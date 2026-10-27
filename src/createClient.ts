@@ -17,6 +17,7 @@ import {
   partition,
   ReplaySubject,
   share,
+  shareReplay,
   switchAll,
   switchMap,
   take,
@@ -200,28 +201,39 @@ export const createClient = (
         return errorOnClose(ws)
       }
       const connection: Connection = {ws, messages$: messagesFrom(ws).pipe(share())}
-      // The last token sent on this socket. Recorded when it is sent, since
-      // the socket is authorized with it from then on, even if the reply is
-      // abandoned because new credentials arrived.
-      let sentToken: string | undefined
+      // The last authorization sent on this socket. The socket is authorized
+      // with its token from the moment it is sent, so the same token is never
+      // sent twice: new credentials that resolve to it get the reply that is
+      // already on its way, or the connection if it has arrived. The request
+      // isn't cancelled when its subscriber switches away (no `refCount`), so
+      // the reply is kept for whoever asks next.
+      let sent: {token: string; authorized$: Observable<Connection>} | undefined
       let warnedTokenKept = false
       const authorize = (credentials: Auth | undefined): Observable<Connection> => {
         const token = credentials && 'token' in credentials ? credentials.token : undefined
-        if (!token && sentToken && !warnedTokenKept) {
-          // There's no way to take an authorization back on an open socket
-          warnedTokenKept = true
-          console.warn(
-            'Bifur: the open socket stays authorized with the previous token, since credentials without a token cannot replace it. Reconnect to drop the token.',
-          )
-        }
-        if (!token || token === sentToken) {
+        if (!token) {
+          if (sent && !warnedTokenKept) {
+            // There's no way to take an authorization back on an open socket
+            warnedTokenKept = true
+            console.warn(
+              'Bifur: the open socket stays authorized with the previous token, since credentials without a token cannot replace it. Reconnect to drop the token.',
+            )
+          }
           return of(connection)
         }
-        sentToken = token
-        return call(connection, 'authorization', {authorization: `Bearer ${token}`}).pipe(
-          take(1),
-          map(() => connection),
-        )
+        if (sent?.token !== token) {
+          sent = {
+            token,
+            authorized$: call(connection, 'authorization', {
+              authorization: `Bearer ${token}`,
+            }).pipe(
+              take(1),
+              map(() => connection),
+              shareReplay(1),
+            ),
+          }
+        }
+        return sent.authorized$
       }
       const authorized$: Observable<Connection | null> = credentials$
         ? credentials$.pipe(

@@ -1,7 +1,7 @@
 import {BehaviorSubject, ReplaySubject} from 'rxjs'
 import {describe, expect, it, vi} from 'vitest'
 
-import {createClient, RpcError, type Auth} from '../index'
+import {createClient, RpcError, WebSocketError, type Auth} from '../index'
 import {MockWebSocket} from './mockWebSocket'
 
 const methodsSent = (socket: MockWebSocket) =>
@@ -123,6 +123,24 @@ describe('auth', () => {
     }
   })
 
+  it('errors the connection, and sends nothing, when the server closes the socket on the token', async () => {
+    // Bifur closes the socket on an invalid token instead of replying
+    const {ws, client} = setup(Promise.resolve({token: 'token-1'}))
+    const errors: unknown[] = []
+    client.heartbeats.subscribe({error: (err) => errors.push(err)})
+    client.request('presence_rollcall').subscribe({error: (err) => errors.push(err)})
+    await flush()
+
+    ws.disconnect(4001, 'unauthorized')
+
+    expect(methodsSent(ws).map((r) => r.method)).toEqual(['authorization'])
+    expect(errors).toHaveLength(2)
+    for (const error of errors) {
+      expect(error).toBeInstanceOf(WebSocketError)
+      expect((error as WebSocketError).code).toBe(4001)
+    }
+  })
+
   it('warns when credentials without a token follow a token whose reply is still pending', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     const {auth, client} = setup(Promise.resolve({token: 'token-1'}))
@@ -154,6 +172,26 @@ describe('auth', () => {
       'Bearer token-2',
       'Bearer token-1',
     ])
+    heartbeats.unsubscribe()
+  })
+
+  it('waits for the pending authorization when a renewal resolves to the token already sent', async () => {
+    const {ws, auth, client} = setup(Promise.resolve({token: 'token-1'}))
+    const heartbeats = client.heartbeats.subscribe({error: () => {}})
+    await flush()
+    // The token was sent, but the server hasn't replied yet
+    expect(methodsSent(ws).map((r) => r.method)).toEqual(['authorization'])
+
+    // A renewal resolves to the same token while that reply is still pending
+    auth.next(Promise.resolve({token: 'token-1'}))
+    client.request('presence_rollcall').subscribe({error: () => {}})
+    await flush()
+
+    // The request waits for the reply to the authorization already sent,
+    // rather than going out as if it had been confirmed
+    expect(methodsSent(ws).map((r) => r.method)).toEqual(['authorization'])
+    ws.respond('authorization', true)
+    expect(methodsSent(ws).map((r) => r.method)).toEqual(['authorization', 'presence_rollcall'])
     heartbeats.unsubscribe()
   })
 
