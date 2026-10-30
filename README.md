@@ -58,7 +58,7 @@ Each promise from `auth` resolves to one of:
 - `{withCredentials: true}`: no token is sent. The browser sends cookies with the WebSocket handshake.
 - `undefined`: no credentials.
 
-A rejected promise errors the connection. Every new request then fails the same way until `auth` emits a new promise, so don't retry before the credentials are renewed. An open socket keeps the credentials it was authorized with when the cookie session changes, or when the credentials switch from a token to cookies or none; reconnect to apply the change.
+A rejected promise errors the connection. Every new request then fails the same way until `auth` emits a new promise, so don't retry before the credentials are renewed. When the credentials switch from a token to cookies or none, for example on logout, the socket is closed. This happens even while the socket waits out `idleTimeout`. Requests waiting at that moment, or made before the socket has closed, fail with a `WebSocketError` of type `CONNECTION_CLOSED`, and the next request connects without the token.
 
 `token$` was removed in 3.0. To migrate, wrap it:
 

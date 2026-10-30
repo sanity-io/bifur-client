@@ -1,4 +1,4 @@
-import {Observable, type ObservableInput, of, ReplaySubject, share, throwError, timer} from 'rxjs'
+import {Observable, type ObservableInput, of, throwError} from 'rxjs'
 
 import {createClient, type BifurClientOptions, type Auth} from './createClient'
 import {createConnect, RpcError, WebSocketError} from './createConnect'
@@ -42,19 +42,6 @@ export interface FromUrlOptions {
 
 const id = <T>(arg: T): T => arg
 
-// The longest delay `setTimeout` supports. Longer ones fire after about 1 ms.
-const MAX_TIMER_DELAY = 2 ** 31 - 1
-
-// When to close the shared connection once its last subscriber has left, in
-// the form `share`'s `resetOnRefCountZero` takes
-function closeWhenIdle(
-  idleTimeout: number | (() => ObservableInput<unknown>),
-): boolean | (() => ObservableInput<unknown>) {
-  if (typeof idleTimeout === 'function') return idleTimeout
-  if (idleTimeout > MAX_TIMER_DELAY) return false
-  return idleTimeout > 0 ? () => timer(idleTimeout) : true
-}
-
 export type {SubscribeMethods, RequestMethod, RequestParams} from './types'
 export {ERROR_CODES} from './errorCodes'
 export {type BifurClient, type BifurClientOptions, type Auth}
@@ -70,12 +57,15 @@ export {RpcError, WebSocketError}
  * @public
  */
 export function fromUrl(url: string, options: FromUrlOptions = {}): BifurClient {
-  const {timeout, auth, idleTimeout = 0} = options
+  const {timeout, auth, idleTimeout} = options
 
   const connect = createConnect<WebSocket>(
     (url: string, protocols?: string | string[]) => new globalThis.WebSocket(url, protocols),
   )
 
+  // A new socket for each subscription. `createClient` subscribes once per
+  // connection and shares it, closing it `idleTimeout` after the last user
+  // leaves.
   return createClient(
     connect(url).pipe(
       timeout
@@ -86,16 +76,8 @@ export function fromUrl(url: string, options: FromUrlOptions = {}): BifurClient 
             ),
           )
         : id,
-      // One shared connection for all subscribers, closed `idleTimeout`
-      // after the last one leaves
-      share({
-        connector: () => new ReplaySubject<WebSocket>(1),
-        resetOnError: true,
-        resetOnComplete: true,
-        resetOnRefCountZero: closeWhenIdle(idleTimeout),
-      }),
     ),
-    {auth},
+    {auth, idleTimeout},
   )
 }
 

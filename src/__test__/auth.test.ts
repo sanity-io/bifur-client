@@ -1,5 +1,5 @@
 import {BehaviorSubject, ReplaySubject} from 'rxjs'
-import {describe, expect, it, vi} from 'vitest'
+import {describe, expect, it} from 'vitest'
 
 import {createClient, RpcError, WebSocketError, type Auth} from '../index'
 import {MockWebSocket} from './mockWebSocket'
@@ -141,19 +141,26 @@ describe('auth', () => {
     }
   })
 
-  it('warns when credentials without a token follow a token whose reply is still pending', async () => {
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
-    const {auth, client} = setup(Promise.resolve({token: 'token-1'}))
-    const heartbeats = client.heartbeats.subscribe({error: () => {}})
+  it('closes the socket, without sending waiting requests, when the token is dropped before its reply', async () => {
+    const {ws, auth, client} = setup(Promise.resolve({token: 'token-1'}))
+    const errors: unknown[] = []
+    client.heartbeats.subscribe({error: (err) => errors.push(err)})
     await flush()
 
     // The token was sent, so the socket is authorized with it from now on
     auth.next(Promise.resolve({withCredentials: true}))
+    client.request('presence_rollcall').subscribe({error: (err) => errors.push(err)})
     await flush()
 
-    expect(warn).toHaveBeenCalledTimes(1)
-    heartbeats.unsubscribe()
-    warn.mockRestore()
+    expect(methodsSent(ws).map((r) => r.method)).toEqual(['authorization'])
+    expect(ws.closeCalls).toHaveLength(1)
+
+    ws.finishClose()
+    expect(errors).toHaveLength(2)
+    for (const error of errors) {
+      expect(error).toBeInstanceOf(WebSocketError)
+      expect((error as WebSocketError).code).toBe(1000)
+    }
   })
 
   it('sends a token again when it was replaced by one whose reply is still pending', async () => {
@@ -216,22 +223,45 @@ describe('auth', () => {
     expect(methodsSent(ws).map((r) => r.method)).toEqual(['presence_rollcall'])
   })
 
-  it('warns once when credentials without a token follow a token on the same socket', async () => {
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+  it('closes the socket when credentials drop the token it was authorized with', async () => {
     const {ws, auth, client} = setup(Promise.resolve({token: 'token-1'}))
-    const heartbeats = client.heartbeats.subscribe({error: () => {}})
+    const errors: unknown[] = []
+    client.heartbeats.subscribe({error: (err) => errors.push(err)})
     await flush()
     ws.respond('authorization', true)
 
-    auth.next(Promise.resolve({withCredentials: true}))
-    await flush()
+    // For example on logout
     auth.next(Promise.resolve(undefined))
     await flush()
+    expect(ws.closeCalls).toHaveLength(1)
 
-    expect(warn).toHaveBeenCalledTimes(1)
-    expect(warn.mock.calls[0]![0]).toMatch(/stays authorized with the previous token/)
-    heartbeats.unsubscribe()
-    warn.mockRestore()
+    ws.finishClose()
+    expect(errors).toHaveLength(1)
+    expect((errors[0] as WebSocketError).type).toBe('CONNECTION_CLOSED')
+    expect((errors[0] as WebSocketError).reason).toMatch(/no longer include a token/)
+  })
+
+  it('remembers the token sent on a socket across subscriptions to it', async () => {
+    // A new subscriber can pick up the same open socket, as `fromUrl` does
+    // during its idle timeout
+    const {ws, auth, client} = setup(Promise.resolve({token: 'token-1'}))
+    const first = client.heartbeats.subscribe({error: () => {}})
+    await flush()
+    ws.respond('authorization', true)
+    first.unsubscribe()
+
+    // The same token isn't sent again
+    const second = client.heartbeats.subscribe({error: () => {}})
+    await flush()
+    expect(methodsSent(ws).map((r) => r.method)).toEqual(['authorization'])
+    second.unsubscribe()
+
+    // Dropping the token still closes the socket
+    auth.next(Promise.resolve({withCredentials: true}))
+    const third = client.heartbeats.subscribe({error: () => {}})
+    await flush()
+    expect(ws.closeCalls).toHaveLength(1)
+    third.unsubscribe()
   })
 
   it('sends no authorization request without a token', async () => {

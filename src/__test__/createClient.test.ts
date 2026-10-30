@@ -361,6 +361,129 @@ describe('fromUrl', () => {
     expect(methodsSent(sockets[0]!)).toEqual(['authorization'])
   })
 
+  it('reconnects without the token after credentials drop it', async () => {
+    const auth = new BehaviorSubject<Promise<Auth | undefined>>(Promise.resolve({token: 'token'}))
+    const client = fromUrl(SOCKET_URL, {auth, idleTimeout: 5_000})
+    subscriptions.push(client.heartbeats.subscribe({error: () => {}}))
+    sockets[0]!.finishHandshake()
+    await vi.advanceTimersByTimeAsync(0)
+    sockets[0]!.respond('authorization', true)
+
+    // Logout: the socket is closed rather than kept with the old token
+    auth.next(Promise.resolve(undefined))
+    await vi.advanceTimersByTimeAsync(0)
+    expect(sockets[0]!.closeCalls).toHaveLength(1)
+    sockets[0]!.finishClose()
+
+    // The next request goes out on a new socket, without a token
+    const results: unknown[] = []
+    subscriptions.push(client.request('presence_announce').subscribe((r) => results.push(r)))
+    expect(sockets).toHaveLength(2)
+    sockets[1]!.finishHandshake()
+    await vi.advanceTimersByTimeAsync(0)
+    sockets[1]!.respond('presence_announce', 'ok')
+    expect(results).toEqual(['ok'])
+    expect(methodsSent(sockets[1]!)).toEqual(['presence_announce'])
+  })
+
+  it('opens one socket for heartbeats, requests and subscriptions', () => {
+    const client = fromUrl(SOCKET_URL)
+    subscriptions.push(client.heartbeats.subscribe({error: () => {}}))
+    subscriptions.push(client.request('presence_rollcall').subscribe({error: () => {}}))
+    subscriptions.push(client.listen('presence').subscribe({error: () => {}}))
+    sockets[0]!.finishHandshake()
+
+    expect(sockets).toHaveLength(1)
+    expect(methodsSent(sockets[0]!)).toEqual(['presence_rollcall', 'presence_subscribe'])
+  })
+
+  it('keeps the token sent on a socket while it waits out its idle timeout', async () => {
+    const auth = new BehaviorSubject<Promise<Auth | undefined>>(Promise.resolve({token: 'token'}))
+    const client = fromUrl(SOCKET_URL, {auth, idleTimeout: 5_000})
+    const first = client.heartbeats.subscribe({error: () => {}})
+    sockets[0]!.finishHandshake()
+    await vi.advanceTimersByTimeAsync(0)
+    sockets[0]!.respond('authorization', true)
+    first.unsubscribe()
+
+    // A new subscriber within the idle timeout reuses the socket, and doesn't
+    // send the token again
+    await vi.advanceTimersByTimeAsync(1_000)
+    subscriptions.push(client.heartbeats.subscribe({error: () => {}}))
+    await vi.advanceTimersByTimeAsync(0)
+    expect(sockets).toHaveLength(1)
+    expect(methodsSent(sockets[0]!)).toEqual(['authorization'])
+  })
+
+  it('closes an idle socket when credentials drop its token, so the next request connects without it', async () => {
+    const auth = new BehaviorSubject<Promise<Auth | undefined>>(Promise.resolve({token: 'token'}))
+    const client = fromUrl(SOCKET_URL, {auth, idleTimeout: 5_000})
+    const heartbeats = client.heartbeats.subscribe({error: () => {}})
+    sockets[0]!.finishHandshake()
+    await vi.advanceTimersByTimeAsync(0)
+    sockets[0]!.respond('authorization', true)
+    heartbeats.unsubscribe()
+
+    // Logout while nothing uses the socket
+    auth.next(Promise.resolve(undefined))
+    await vi.advanceTimersByTimeAsync(0)
+    expect(sockets[0]!.closeCalls).toHaveLength(1)
+    sockets[0]!.finishClose()
+
+    const results: unknown[] = []
+    subscriptions.push(client.request('presence_rollcall').subscribe((r) => results.push(r)))
+    expect(sockets).toHaveLength(2)
+    sockets[1]!.finishHandshake()
+    await vi.advanceTimersByTimeAsync(0)
+    sockets[1]!.respond('presence_rollcall', 'ok')
+    expect(results).toEqual(['ok'])
+    expect(methodsSent(sockets[1]!)).toEqual(['presence_rollcall'])
+  })
+
+  it('authorizes an idle socket with a renewed token', async () => {
+    const auth = new BehaviorSubject<Promise<Auth | undefined>>(Promise.resolve({token: 'token-1'}))
+    const client = fromUrl(SOCKET_URL, {auth, idleTimeout: 5_000})
+    const heartbeats = client.heartbeats.subscribe({error: () => {}})
+    sockets[0]!.finishHandshake()
+    await vi.advanceTimersByTimeAsync(0)
+    sockets[0]!.respond('authorization', true)
+    heartbeats.unsubscribe()
+
+    // Renewed while nothing uses the socket
+    auth.next(Promise.resolve({token: 'token-2'}))
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(sockets).toHaveLength(1)
+    expect(sockets[0]!.sendCalls.map(({data}) => JSON.parse(data).params.authorization)).toEqual([
+      'Bearer token-1',
+      'Bearer token-2',
+    ])
+  })
+
+  it('sends a rejected token again on a new socket when the consumer retries', async () => {
+    const auth = new BehaviorSubject<Promise<Auth | undefined>>(Promise.resolve({token: 'token'}))
+    const client = fromUrl(SOCKET_URL, {auth, idleTimeout: 5_000})
+    const errors: unknown[] = []
+    subscriptions.push(
+      client.heartbeats.pipe(retry(1)).subscribe({error: (err) => errors.push(err)}),
+    )
+    sockets[0]!.finishHandshake()
+    await vi.advanceTimersByTimeAsync(0)
+
+    // The rejection resets the connection and closes its socket, even though
+    // `idleTimeout` would otherwise keep it, so the retry starts afresh
+    sockets[0]!.respondError('authorization', 4001, 'Invalid token')
+    expect(sockets[0]!.closeCalls).toHaveLength(1)
+    expect(sockets).toHaveLength(2)
+    sockets[1]!.finishHandshake()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(methodsSent(sockets[1]!)).toEqual(['authorization'])
+
+    sockets[1]!.respondError('authorization', 4001, 'Invalid token')
+    expect(errors).toHaveLength(1)
+    expect((errors[0] as RpcError).code).toBe(4001)
+  })
+
   describe('unsubscribing', () => {
     // rxjs reports errors that reach no subscriber here
     let unhandledErrors: unknown[]
