@@ -27,29 +27,52 @@ const sanityClient = createClient({
 const bifur = fromSanityClient(sanityClient)
 ```
 
-`fromSanityClient` also accepts `timeout` and `idleTimeout` as a second argument, with the same meaning as for `fromUrl` below.
+`fromSanityClient` accepts the same options as `fromUrl` below, as a second argument. Without `auth`, the connection is authorized with the client's token, if it has one.
 
 ### From a WebSocket URL
 
 Connect directly to a Bifur WebSocket endpoint:
 
 ```ts
-import {fromUrl} from '@sanity/bifur-client'
-import {of} from 'rxjs'
+import {fromUrl, type Auth} from '@sanity/bifur-client'
+import {BehaviorSubject} from 'rxjs'
+
+const auth = new BehaviorSubject<Promise<Auth | undefined>>(Promise.resolve({token: 'your-token'}))
 
 const bifur = fromUrl('wss://example.sanity.io/socket/production', {
   timeout: 10_000,
-  token$: of('your-token'),
+  auth,
 })
+
+// On renewal. Requests wait until the socket is authorized with the new token.
+auth.next(renewToken().then((token) => ({token})))
+```
+
+#### Authentication
+
+Each promise from `auth` resolves to one of:
+
+- `{token: string}`: the socket is authorized with the token.
+- `{withCredentials: true}`: no token is sent. The browser sends cookies with the WebSocket handshake.
+- `undefined`: no credentials.
+
+A rejected promise errors the connection. Every new request then fails the same way until `auth` emits a new promise, so don't retry before the credentials are renewed. When the credentials switch from a token to cookies or none, for example on logout, the socket is closed. This happens even while the socket waits out `idleTimeout`. Requests waiting at that moment, or made before the socket has closed, fail with a `WebSocketError` of type `CONNECTION_CLOSED`, and the next request connects without the token.
+
+`token$` was removed in 3.0. To migrate, wrap it:
+
+```ts
+import {map} from 'rxjs'
+
+fromUrl(url, {auth: token$.pipe(map((token) => Promise.resolve(token ? {token} : undefined)))})
 ```
 
 #### Options
 
-| Option        | Type                                | Description                                                                                                                                                                                                                                                       |
-| ------------- | ----------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `timeout`     | `number`                            | Milliseconds to wait before timing out the initial connection                                                                                                                                                                                                     |
-| `token$`      | `Observable<string \| null>`        | Auth token, or `null` for not authenticated. Must replay its latest value to new subscribers, like a `BehaviorSubject` or `shareReplay`, because each new connection subscribes to it and waits for a token. Emitting a new value re-authenticates the connection |
-| `idleTimeout` | `number \| (() => ObservableInput)` | Milliseconds to keep the socket open after the last subscriber leaves. Defaults to `0` (closes immediately). Pass a function to decide each time: the socket closes when the observable it returns emits.                                                         |
+| Option        | Type                                     | Description                                                                                                                                                                                               |
+| ------------- | ---------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `timeout`     | `number`                                 | Milliseconds to wait before timing out the initial connection                                                                                                                                             |
+| `auth`        | `Observable<Promise<Auth \| undefined>>` | Stream of promises that resolve to the credentials. Emit a new promise when a renewal starts; requests wait for it. Must replay its latest value to new subscribers, like a `BehaviorSubject`.            |
+| `idleTimeout` | `number \| (() => ObservableInput)`      | Milliseconds to keep the socket open after the last subscriber leaves. Defaults to `0` (closes immediately). Pass a function to decide each time: the socket closes when the observable it returns emits. |
 
 ### Presence example
 
@@ -92,6 +115,8 @@ When the socket closes while `heartbeats` is subscribed, it errors with a `WebSo
 **Subscribe methods:** `presence`, `authorization`
 
 ### Error codes
+
+The connection-level codes arrive as `WebSocketError.code`, the close code. The JSON-RPC codes arrive as `RpcError.code`, when the server replies to a request with an error.
 
 ```ts
 import {ERROR_CODES} from '@sanity/bifur-client'
