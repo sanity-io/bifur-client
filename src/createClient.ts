@@ -132,12 +132,11 @@ const CLOSE_CODE_NORMAL = 1000
 const CLOSE_REASON_TOKEN_DROPPED = 'Credentials no longer include a token'
 
 /**
- * Authentication for the connection: a token, or cookies. With
+ * Credentials for the connection: a token, or cookies. With
  * `{withCredentials: true}`, the client sends no token, and the browser sends
- * cookies with the WebSocket handshake. A changed cookie session isn't applied
- * to a socket that is already open, and switching from a token to cookies
- * closes the socket, so the next one connects without the token. Accepted so
- * the same auth stream can be passed to `@sanity/client`.
+ * cookies with the WebSocket handshake. A cookie change doesn't reach a socket
+ * that is already open. Switching from a token to cookies closes the socket,
+ * so the next one connects without the token.
  *
  * @public
  */
@@ -148,33 +147,26 @@ export type Auth = {token: string} | {withCredentials: true}
  */
 export interface BifurClientOptions {
   /**
-   * The connection's credentials, as a stream of promises. Emit a promise
-   * when a renewal starts, and resolve it with the new credentials: requests
-   * wait until the open socket is authorized with them, without
-   * reconnecting, and are then sent. A promise that resolves to `undefined`
-   * sends no credentials. A promise that never settles keeps requests
-   * waiting. Credentials without a token that come after a token will close
-   * the socket. Requests pending at that moment, or made before the socket has
-   * closed, will fail with `WebSocketError` with type `CONNECTION_CLOSED`,
-   * and the following requests will connect without a token.
-   * A renewed token is similarly sent to an idle socket (i.e. while waiting
-   * for idleTimeout).
+   * The connection's credentials, as a stream of promises. Must replay its
+   * latest emission to new subscribers, like a `BehaviorSubject`, or requests
+   * on a new socket wait for the next emission.
    *
-   * A rejected auth promise errors the connection with the promise's own error.
-   * Until `auth` emits a new promise, every new request opens a socket, gets
-   * the same rejection and closes it again, so don't retry before the
-   * credentials are renewed. The client only handles a promise's rejection
-   * while a socket is open; add your own `.catch` to avoid unhandled
-   * rejections.
+   * Emit a new promise when a renewal starts. Requests wait until it resolves
+   * and the open socket, idle or not, is authorized with the result. A promise
+   * that never settles keeps them waiting.
    *
-   * Must replay the latest emission to new subscribers, like a
-   * `BehaviorSubject`. With a plain `Subject`, requests on a new socket wait
-   * until `auth` emits again.
+   * Credentials without a token, after a token, close the socket. Requests
+   * waiting then fail with a `WebSocketError` of type `CONNECTION_CLOSED`, and
+   * the next request connects without the token.
+   *
+   * A rejected promise errors the connection with its error, and each new
+   * request fails the same way until `auth` emits again. The client only
+   * handles a rejection while a socket is open, so add your own `.catch`.
    */
   auth?: Observable<Promise<Auth | undefined>>
   /**
    * How long, in milliseconds, the connection stays open after its last
-   * subscriber leaves. See `FromUrlOptions.idleTimeout`. Defaults to `0`.
+   * subscriber leaves. See {@link FromUrlOptions.idleTimeout}. Defaults to `0`.
    */
   idleTimeout?: number | (() => ObservableInput<unknown>)
   getNextRequestId?: () => string
@@ -200,11 +192,10 @@ function isConnection(connection: Connection | null): connection is Connection {
 /**
  * Create a Bifur client
  *
- * @param connection$ - An observable of open WebSocket connections. The client
- *   uses the latest socket until that socket closes. A socket that isn't open
- *   when it is emitted, or that closes later, errors the client's connection
- *   with a `WebSocketError` of type `CONNECTION_CLOSED`, so subscribers can
- *   reconnect.
+ * @param connection$ - Emits open WebSocket connections. Subscribed when the
+ *   client is first used, and unsubscribed `idleTimeout` after the last user
+ *   leaves. A socket that isn't open when emitted, or that closes later,
+ *   errors the connection with a `WebSocketError` of type `CONNECTION_CLOSED`.
  * @param options - Options for the client
  * @returns A Bifur client
  * @public
@@ -219,21 +210,16 @@ export const createClient = (
   const credentials$: Observable<Observable<Auth | undefined | null>> | undefined = auth?.pipe(
     map((promise) => concat(of(null), from(promise))),
   )
-  // The last authorization sent, and the socket it was sent on. The
-  // connection below lasts as long as its socket, but a caller may pass a
-  // shared `connection$` that hands the same open socket to a new
-  // subscription, so this is kept outside it: the socket's token is still
-  // known then. Only one socket is current at a time, so one is enough. The
-  // reply is shared without `refCount`, so a renewal that switches away from
-  // a pending authorization doesn't cancel it, and one that resolves to the
-  // same token waits for that same reply.
+  // The last token sent, and the socket it went to. Kept outside the connection
+  // because a shared `connection$` can hand the same socket to a new
+  // connection, which must not send the token again. The reply is shared
+  // without `refCount`, so it outlives a renewal that switches away, and a
+  // renewal back to the same token waits for it.
   let lastAuthorization: SentAuthorization | undefined
 
-  // The one connection all users share: the socket, authorized with the
-  // current credentials. Emits `null` while a credential renewal is pending,
-  // so requests wait for it. The share keeps it subscribed until
-  // `idleTimeout` after the last user leaves, so credential changes reach an
-  // idle socket too: a renewal is sent to it, and a dropped token closes it.
+  // The shared, authorized connection. Emits `null` while a renewal is
+  // pending, so requests wait. The share outlives its last user by
+  // `idleTimeout`, so an idle socket still follows `auth`.
   const authedConnection$: Observable<Connection | null> = connection$.pipe(
     switchMap((ws) => {
       if (ws.readyState === READY_STATE_CONNECTING) {
@@ -254,9 +240,8 @@ export const createClient = (
           if (!sent) {
             return of(connection)
           }
-          // There's no call that takes an authorization back, so close the
-          // socket: the next connection starts without the token. Requests
-          // wait, then error with the close code once `close` fires.
+          // Bifur can't revoke an authorization, so close the socket. Waiting
+          // requests error once `close` fires.
           return defer(() => {
             ws.close(CLOSE_CODE_NORMAL, CLOSE_REASON_TOKEN_DROPPED)
             return of(null)
@@ -385,9 +370,8 @@ export const createClient = (
   }
 
   return {
-    // A `Date` when the connection is (re)authorized and whenever a message
-    // arrives, heartbeats included. Keeps the connection open while
-    // subscribed, so it can keep the socket alive between requests.
+    // A `Date` on each (re)authorization and each message, heartbeats included.
+    // Subscribing keeps the connection open between requests.
     heartbeats: merge(
       connected$,
       connected$.pipe(

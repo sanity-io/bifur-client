@@ -63,9 +63,7 @@ export function fromUrl(url: string, options: FromUrlOptions = {}): BifurClient 
     (url: string, protocols?: string | string[]) => new globalThis.WebSocket(url, protocols),
   )
 
-  // A new socket for each subscription. `createClient` subscribes once per
-  // connection and shares it, closing it `idleTimeout` after the last user
-  // leaves.
+  // Cold: a new socket per subscription. `createClient` shares it.
   return createClient(
     connect(url).pipe(
       timeout

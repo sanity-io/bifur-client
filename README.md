@@ -44,9 +44,7 @@ const bifur = fromUrl('wss://example.sanity.io/socket/production', {
   auth,
 })
 
-// When the token is about to expire, emit the renewal as a promise. Requests
-// wait until the open socket is authorized with the new token, then they are
-// sent. `renewToken` is your own function that resolves to the new token.
+// On renewal. Requests wait until the socket is authorized with the new token.
 auth.next(renewToken().then((token) => ({token})))
 ```
 
@@ -63,6 +61,8 @@ A rejected promise errors the connection. Every new request then fails the same 
 `token$` was removed in 3.0. To migrate, wrap it:
 
 ```ts
+import {map} from 'rxjs'
+
 fromUrl(url, {auth: token$.pipe(map((token) => Promise.resolve(token ? {token} : undefined)))})
 ```
 
@@ -115,6 +115,8 @@ When the socket closes while `heartbeats` is subscribed, it errors with a `WebSo
 **Subscribe methods:** `presence`, `authorization`
 
 ### Error codes
+
+The connection-level codes arrive as `WebSocketError.code`, the close code. The JSON-RPC codes arrive as `RpcError.code`, when the server replies to a request with an error.
 
 ```ts
 import {ERROR_CODES} from '@sanity/bifur-client'

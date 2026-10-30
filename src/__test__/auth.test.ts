@@ -242,8 +242,7 @@ describe('auth', () => {
   })
 
   it('remembers the token sent on a socket across subscriptions to it', async () => {
-    // A new subscriber can pick up the same open socket, as `fromUrl` does
-    // during its idle timeout
+    // A shared `connection$` can hand the same open socket to a new connection
     const {ws, auth, client} = setup(Promise.resolve({token: 'token-1'}))
     const first = client.heartbeats.subscribe({error: () => {}})
     await flush()

@@ -14,7 +14,9 @@ const client = fromUrl(url, {auth})
 auth.next(renewToken().then((token) => ({token})))
 ```
 
-`request()` and `listen()` now fail with an `RpcError`, which carries the JSON-RPC error `code`, when the server replies with an error. Before, they emitted `undefined`. A rejected `authorization` request therefore errors the connection instead of letting requests go out unauthorized.
+`createClient` also takes the `idleTimeout` option now, the same as `fromUrl`.
+
+**Breaking:** `request()` and `listen()` now fail with an `RpcError`, which carries the JSON-RPC error `code`, when the server replies with an error. Before, they emitted `undefined`. A rejected `authorization` request therefore errors the connection instead of letting requests go out unauthorized.
 
 **Breaking:** `token$` is removed. Wrap an existing token observable to migrate:
 
