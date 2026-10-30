@@ -38,6 +38,21 @@ export interface FromUrlOptions {
    * ```
    */
   idleTimeout?: number | (() => ObservableInput<unknown>)
+  /**
+   * Closes the connection when this emits, even while it's in use or still
+   * connecting, without waiting for `idleTimeout`. Everything using it errors with a
+   * `WebSocketError` of type `CONNECTION_CLOSED`, and the next subscriber opens
+   * a new socket. It's subscribed only while a connection exists, so an
+   * emission between connections does nothing. It must not replay: a replayed
+   * emission closes every new connection.
+   *
+   * For example, close the socket when the page enters the back/forward cache
+   * (`pagehide` with `persisted: true`). An open socket either keeps the page
+   * out of the cache or is closed by the browser, which logs an error. Make
+   * sure nothing uses the client afterwards, or it reconnects. Nothing sent
+   * while the page is being left is guaranteed to reach the server.
+   */
+  closeOn?: Observable<unknown>
 }
 
 const id = <T>(arg: T): T => arg
@@ -57,7 +72,7 @@ export {RpcError, WebSocketError}
  * @public
  */
 export function fromUrl(url: string, options: FromUrlOptions = {}): BifurClient {
-  const {timeout, auth, idleTimeout} = options
+  const {timeout, auth, idleTimeout, closeOn} = options
 
   const connect = createConnect<WebSocket>(
     (url: string, protocols?: string | string[]) => new globalThis.WebSocket(url, protocols),
@@ -65,7 +80,7 @@ export function fromUrl(url: string, options: FromUrlOptions = {}): BifurClient 
 
   // Cold: a new socket per subscription. `createClient` shares it.
   return createClient(
-    connect(url).pipe(
+    connect(url, {closeOn}).pipe(
       timeout
         ? timeoutFirstWith(
             timeout,
