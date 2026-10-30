@@ -61,7 +61,7 @@ describe('fromUrl closeOn', () => {
     ])
   })
 
-  it('works through fromSanityClient too', () => {
+  it('closes the socket when passed to fromSanityClient', () => {
     const client = fromSanityClient(
       {
         config: () => ({dataset: 'test'}),

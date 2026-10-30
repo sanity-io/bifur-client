@@ -46,19 +46,17 @@ export interface FromUrlOptions {
   idleTimeout?: number | (() => ObservableInput<unknown>)
   /**
    * Closes the connection when this emits, even while it's in use, without
-   * waiting for `idleTimeout`. Everything using the connection errors with a
-   * `WebSocketError` of type `CONNECTION_CLOSED`, and the next subscriber
-   * opens a new socket. An emission while no connection is open does nothing.
+   * waiting for `idleTimeout`. Everything using it errors with a
+   * `WebSocketError` of type `CONNECTION_CLOSED`, and the next subscriber opens
+   * a new socket. It's subscribed only while a connection exists, so an
+   * emission between connections does nothing. It must not replay: a replayed
+   * emission closes every new connection.
    *
    * For example, close the socket when the page enters the back/forward cache
-   * (`pagehide` with `persisted: true`). An open socket would otherwise either
-   * be closed by the browser, which logs an error, or keep the page out of the
-   * cache.
-   *
-   * Anything that uses the client after this emits opens a new connection, so
-   * make sure nothing does when you close for the back/forward cache. Closing
-   * sends nothing to the server first, and requests made while a page is being
-   * left, such as a "goodbye" message, can't be relied on to reach the server.
+   * (`pagehide` with `persisted: true`). An open socket either keeps the page
+   * out of the cache or is closed by the browser, which logs an error. Make
+   * sure nothing uses the client afterwards, or it reconnects. Nothing sent
+   * while the page is being left is guaranteed to reach the server.
    */
   closeOn?: Observable<unknown>
 }
@@ -97,9 +95,8 @@ export function fromUrl(url: string, options: FromUrlOptions = {}): BifurClient 
             ),
           )
         : id,
-      // Error the connection when `closeOn` emits. The error tears the
-      // connection down, which closes the socket (or defers the close until a
-      // handshake in progress finishes), and resets the client's share.
+      // Erroring tears down the connection, which closes the socket (after the
+      // handshake, if one is in progress) and resets the client's share.
       closeOn
         ? mergeWith(
             closeOn.pipe(

@@ -8,8 +8,8 @@ export const CLOSE_REASON = 'WebSockets connection closed by client'
 /**
  * Emitted when the socket errors or closes, and when a request is made on a
  * socket that is no longer open. `code` and `reason` describe the close,
- * whichever side closed it (for example `1000` when `auth` drops the token),
- * and are `undefined` for a connection error.
+ * whichever side closed it (for example `1000` when `auth` drops the token or
+ * `closeOn` emits), and are `undefined` for a connection error.
  *
  * @public
  */
