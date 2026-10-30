@@ -1,13 +1,7 @@
-import {mergeMap, mergeWith, Observable, type ObservableInput, of, take, throwError} from 'rxjs'
+import {Observable, type ObservableInput, of, throwError} from 'rxjs'
 
 import {createClient, type BifurClientOptions, type Auth} from './createClient'
-import {
-  CLOSE_CODE_NORMAL,
-  CLOSE_REASON,
-  createConnect,
-  RpcError,
-  WebSocketError,
-} from './createConnect'
+import {createConnect, RpcError, WebSocketError} from './createConnect'
 import {timeoutFirstWith} from './operators'
 import type {BifurClient, SanityClientLike} from './types'
 
@@ -45,8 +39,8 @@ export interface FromUrlOptions {
    */
   idleTimeout?: number | (() => ObservableInput<unknown>)
   /**
-   * Closes the connection when this emits, even while it's in use, without
-   * waiting for `idleTimeout`. Everything using it errors with a
+   * Closes the connection when this emits, even while it's in use or still
+   * connecting, without waiting for `idleTimeout`. Everything using it errors with a
    * `WebSocketError` of type `CONNECTION_CLOSED`, and the next subscriber opens
    * a new socket. It's subscribed only while a connection exists, so an
    * emission between connections does nothing. It must not replay: a replayed
@@ -86,32 +80,12 @@ export function fromUrl(url: string, options: FromUrlOptions = {}): BifurClient 
 
   // Cold: a new socket per subscription. `createClient` shares it.
   return createClient(
-    connect(url).pipe(
+    connect(url, {closeOn}).pipe(
       timeout
         ? timeoutFirstWith(
             timeout,
             throwError(
               () => new Error(`Timeout after ${timeout} while establishing WebSockets connection`),
-            ),
-          )
-        : id,
-      // Erroring tears down the connection, which closes the socket (after the
-      // handshake, if one is in progress) and resets the client's share.
-      closeOn
-        ? mergeWith(
-            closeOn.pipe(
-              take(1),
-              mergeMap(() =>
-                throwError(
-                  () =>
-                    new WebSocketError(
-                      'WebSocket connection closed',
-                      'CONNECTION_CLOSED',
-                      CLOSE_CODE_NORMAL,
-                      CLOSE_REASON,
-                    ),
-                ),
-              ),
             ),
           )
         : id,

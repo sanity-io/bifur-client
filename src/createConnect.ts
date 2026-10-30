@@ -1,9 +1,9 @@
-import {Observable} from 'rxjs'
+import {Observable, take} from 'rxjs'
 
 import type {WebSocketLike} from './types'
 
-export const CLOSE_CODE_NORMAL = 1000
-export const CLOSE_REASON = 'WebSockets connection closed by client'
+const CLOSE_CODE_NORMAL = 1000
+const CLOSE_REASON = 'WebSockets connection closed by client'
 
 /**
  * Emitted when the socket errors or closes, and when a request is made on a
@@ -50,30 +50,23 @@ export class RpcError extends Error {
 }
 
 /**
- * Closes the socket, but never mid-handshake — that's what makes browsers log
- * "WebSocket is closed before the connection is established". A CONNECTING
- * socket gets its close deferred to `onopen`, and a failed handshake needs no
- * close at all.
+ * Closes the socket. A CONNECTING socket gets its close deferred to `onopen`,
+ * since closing mid-handshake makes browsers log "WebSocket is closed before
+ * the connection is established". `force` closes it at once anyway. A failed
+ * handshake needs no close at all.
  */
-function closeSocket(ws: WebSocketLike): void {
-  if (ws.readyState === ws.CONNECTING) {
+function closeSocket(ws: WebSocketLike, force = false): void {
+  if (ws.readyState === ws.CONNECTING && !force) {
     ws.onopen = () => ws.close(CLOSE_CODE_NORMAL, CLOSE_REASON)
-  } else if (ws.readyState === ws.OPEN) {
+  } else if (ws.readyState === ws.CONNECTING || ws.readyState === ws.OPEN) {
     ws.close(CLOSE_CODE_NORMAL, CLOSE_REASON)
   }
-}
-
-function detachHandlersAndClose(ws: WebSocketLike): void {
-  ws.onopen = null
-  ws.onerror = null
-  ws.onclose = null
-  closeSocket(ws)
 }
 
 export function createConnect<T extends WebSocketLike>(
   getWebsocketInstance: (url: string, protocols?: string | string[]) => T,
 ) {
-  return (url: string) => {
+  return (url: string, {closeOn}: {closeOn?: Observable<unknown>} = {}) => {
     return new Observable<T>((subscriber) => {
       const ws = getWebsocketInstance(url)
 
@@ -100,8 +93,29 @@ export function createConnect<T extends WebSocketLike>(
       ws.onclose = onClose
       ws.onerror = onError
 
+      if (closeOn) {
+        subscriber.add(
+          closeOn.pipe(take(1)).subscribe(() => {
+            // Close at once, even mid-handshake: the page is likely being left,
+            // and the socket could keep it out of the back/forward cache
+            closeSocket(ws, true)
+            subscriber.error(
+              new WebSocketError(
+                'WebSocket connection closed',
+                'CONNECTION_CLOSED',
+                CLOSE_CODE_NORMAL,
+                CLOSE_REASON,
+              ),
+            )
+          }),
+        )
+      }
+
       return () => {
-        detachHandlersAndClose(ws)
+        ws.onopen = null
+        ws.onerror = null
+        ws.onclose = null
+        closeSocket(ws)
       }
     })
   }

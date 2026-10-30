@@ -77,7 +77,7 @@ fromUrl(url, {auth: token$.pipe(map((token) => Promise.resolve(token ? {token} :
 
 #### Closing the connection
 
-Pass `closeOn` to close the connection when an observable emits, even while it's in use, without waiting for `idleTimeout`. Everything still using the connection errors with a `WebSocketError` of type `CONNECTION_CLOSED`, and the next subscriber opens a new socket.
+Pass `closeOn` to close the connection when an observable emits, even while it's in use or still connecting, without waiting for `idleTimeout`. Everything still using the connection errors with a `WebSocketError` of type `CONNECTION_CLOSED`, and the next subscriber opens a new socket.
 
 `closeOn` must not replay its last value. It's subscribed once per connection, so a `BehaviorSubject` or `ReplaySubject` closes every new connection as soon as it opens.
 
@@ -93,7 +93,7 @@ const enteredBackForwardCache$ = fromEvent<PageTransitionEvent>(window, 'pagehid
 const bifur = fromUrl(url, {auth, idleTimeout: 5_000, closeOn: enteredBackForwardCache$})
 ```
 
-Anything that uses the client after `closeOn` has emitted opens a new connection, so make sure nothing does when you close for the back/forward cache. Before the socket closes, each active `listen()` sends its `_unsubscribe` request; nothing else is sent. Requests made while a page is being left, such as a "goodbye" message, can't be relied on to reach the server: they're lost whenever the page is killed or the network drops.
+Anything that uses the client after `closeOn` has emitted opens a new connection, so make sure nothing does when you close for the back/forward cache. Nothing is sent to the server first: it drops the connection's subscriptions when the socket closes. Requests made while a page is being left, such as a "goodbye" message, can't be relied on to reach the server: they're lost whenever the page is killed or the network drops.
 
 ### Presence example
 

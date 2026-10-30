@@ -102,6 +102,24 @@ describe('fromUrl closeOn', () => {
     }
   })
 
+  it('closes the socket at once, without unsubscribing active subscriptions first', async () => {
+    // The server drops the connection's subscriptions when the socket closes
+    const client = createClient()
+    await openAuthorized(client)
+    subscriptions.push(client.listen('presence').subscribe({error: () => {}}))
+    sockets[0]!.respond('presence_subscribe', 'subscription-id')
+
+    closeOn.next()
+
+    expect(methodsSent(sockets[0]!).map((r) => r.method)).toEqual([
+      'authorization',
+      'presence_subscribe',
+    ])
+    expect(sockets[0]!.closeCalls).toEqual([
+      {...GRACEFUL_CLOSE, readyStateAtCall: sockets[0]!.OPEN},
+    ])
+  })
+
   it('opens a new socket for the next subscriber, authorized with the current auth', async () => {
     const client = createClient()
     await openAuthorized(client)
@@ -131,7 +149,8 @@ describe('fromUrl closeOn', () => {
     expect(sockets[0]!.closeCalls).toHaveLength(1)
   })
 
-  it('never closes a socket mid-handshake: the close waits until it opens', () => {
+  it('closes a socket that is still connecting at once', () => {
+    // A page leaving for the back/forward cache shouldn't wait for the handshake
     const client = createClient()
     const errors: unknown[] = []
     subscriptions.push(client.heartbeats.subscribe({error: (err) => errors.push(err)}))
@@ -139,10 +158,8 @@ describe('fromUrl closeOn', () => {
     closeOn.next()
 
     expect(errors).toHaveLength(1)
-    expect(sockets[0]!.closeCalls).toEqual([])
-    sockets[0]!.finishHandshake()
     expect(sockets[0]!.closeCalls).toEqual([
-      {...GRACEFUL_CLOSE, readyStateAtCall: sockets[0]!.OPEN},
+      {...GRACEFUL_CLOSE, readyStateAtCall: sockets[0]!.CONNECTING},
     ])
   })
 
