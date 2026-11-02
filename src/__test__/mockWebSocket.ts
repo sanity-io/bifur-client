@@ -98,6 +98,15 @@ export class MockWebSocket {
     this.deliver(data)
   }
 
+  /** Replies to the most recent request for `method` with a JSON-RPC error. */
+  respondError(method: string, code: number, message: string): void {
+    const request = this.sendCalls
+      .map(({data}) => JSON.parse(data) as {id: string; method: string})
+      .findLast((req) => req.method === method)
+    if (!request) throw new Error(`No ${method} request was sent`)
+    this.deliver(JSON.stringify({jsonrpc: '2.0', id: request.id, error: {code, message}}))
+  }
+
   /** Replies to the most recent request for `method` with `result`. */
   respond(method: string, result: unknown): void {
     const request = this.sendCalls
