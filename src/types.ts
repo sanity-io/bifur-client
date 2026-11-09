@@ -4,9 +4,6 @@ import type {Observable} from 'rxjs'
  * @public
  */
 export type RequestMethod =
-  | 'doc'
-  | 'query'
-  | 'mutate'
   | 'presence_rollcall'
   | 'presence_announce'
   | 'presence_disconnect'
@@ -19,7 +16,6 @@ export type RequestMethod =
  */
 export type SubscribeMethods =
   | 'presence'
-  | 'listen'
   // authorization is both a request method (performs actual authorization) _AND_
   // a subscription method (emits authorization events, eg expiring tokens)
   | 'authorization'
