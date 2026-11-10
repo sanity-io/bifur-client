@@ -1,5 +1,11 @@
 # @sanity/bifur-client
 
+## 3.0.1
+
+### Patch Changes
+
+- [#43](https://github.com/sanity-io/bifur-client/pull/43) [`272b315`](https://github.com/sanity-io/bifur-client/commit/272b31569fa9865f762ccd2a4efba64bda4445e0) Thanks [@renovate](https://github.com/apps/renovate)! - fix(deps): update non-major
+
 ## 3.0.0
 
 ### Major Changes
