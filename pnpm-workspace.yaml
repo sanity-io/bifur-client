@@ -6,6 +6,7 @@ minimumReleaseAgeExclude:
   - '@oxfmt/*'
   - '@oxlint/*'
   - '@sanity/*'
+  - '@types/node@26.6.10'
   - 'oxfmt'
   - 'oxlint'
   - 'oxlint-tsgolint'
